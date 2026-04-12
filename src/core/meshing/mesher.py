@@ -1,0 +1,3 @@
+class Mesher:
+    def mesh(self, geometry):
+        ...

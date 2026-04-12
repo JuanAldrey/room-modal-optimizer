@@ -1,0 +1,3 @@
+class Evaluator:
+    def evaluate(self, simulation_result):
+        ...

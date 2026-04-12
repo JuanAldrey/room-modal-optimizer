@@ -1,0 +1,3 @@
+class GeometryGenerator:
+    def generate(self, params):
+        ...
