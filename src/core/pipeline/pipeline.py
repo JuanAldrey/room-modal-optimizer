@@ -1,12 +1,10 @@
 from core.evaluation.evaluator import Evaluator
-from core.geometry.geometry_generator import GeometryGenerator
-from core.meshing.mesher import Mesher
+from core.meshing.mesh_generator import Mesher
 from core.simulation.simulator import Simulator
 
 
 class Pipeline:
     def __init__(self):
-        self.geometry = GeometryGenerator()
         self.mesher = Mesher()
         self.simulator = Simulator()
         self.evaluator = Evaluator()
