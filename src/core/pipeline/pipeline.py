@@ -1,5 +1,5 @@
 from core.evaluation.evaluator import Evaluator
-from core.meshing.mesh_generator import Mesher
+from core.meshing.mesher import Mesher
 from core.simulation.simulator import Simulator
 
 

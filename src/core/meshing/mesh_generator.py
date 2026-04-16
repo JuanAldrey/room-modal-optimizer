@@ -1,3 +1,0 @@
-class Mesher:
-    def meshGenerator(self, geometry):
-        ...
