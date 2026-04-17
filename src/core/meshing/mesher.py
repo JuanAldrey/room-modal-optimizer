@@ -128,7 +128,7 @@ class Mesher:
 params = {
     # Plant lengths
     "Lx": 10,
-    "Ly": 5,
+    "Ly": 10,
     "Lz": 3,
 
     # Plant offsets
@@ -142,8 +142,8 @@ params = {
     "back_x1": -0.1,
 
     # Wall inclination (degrees)
-    "left_angle": 20,
-    "right_angle": 20,
+    "left_angle": 10,
+    "right_angle": -10,
     "front_angle": -20,
     "back_angle": -20
 }     
