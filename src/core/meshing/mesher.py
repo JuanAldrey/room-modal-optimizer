@@ -6,7 +6,7 @@ class Mesher:
         self.params = params
         self.lc = lc
     
-    def generateMesh(self):
+    def create(self):
         gmsh.initialize()
         gmsh.model.add("room")
         floor_pts = self.getFloorPoints()
@@ -123,3 +123,30 @@ class Mesher:
 
         gmsh.model.mesh.generate(dim)
         gmsh.write("data/mesh/mesh.msh")
+        
+
+params = {
+    # Plant lengths
+    "Lx": 10,
+    "Ly": 5,
+    "Lz": 3,
+
+    # Plant offsets
+    "left_y0": 0.3,
+    "left_y1": 0.2,
+    "right_y0": 0.0,
+    "right_y1": -0.1,
+    "front_x0": 0.3,
+    "front_x1": 0.1,
+    "back_x0": 0.2,
+    "back_x1": -0.1,
+
+    # Wall inclination (degrees)
+    "left_angle": 20,
+    "right_angle": 20,
+    "front_angle": -20,
+    "back_angle": -20
+}     
+
+mesher = Mesher(params, lc=0.3)
+mesher.create()
