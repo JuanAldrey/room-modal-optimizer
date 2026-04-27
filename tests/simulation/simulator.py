@@ -24,6 +24,11 @@ params = {
     "back_angle": -10
 }
 
+# lc chosen from highest frequency:
+# lambda_min = c / f_max = 343 / 200 = 1.715 m
+# Use ~6 elems per wavelength:
+# lc = 1.715 / 6 = 0.286 m
+# Chosen: lc = 0.25 m
 mesher = Mesher(params, lc=0.25)
 mesh_path = mesher.create(visualize=True)
 
