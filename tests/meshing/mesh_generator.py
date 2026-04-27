@@ -1,4 +1,4 @@
-from meshing.mesher import Mesher
+from room_modal_optimizer.meshing.mesher import Mesher
 
 params = {
     # Plant lengths

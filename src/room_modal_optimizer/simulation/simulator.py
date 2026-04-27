@@ -20,7 +20,7 @@ class Simulator:
         self.q = None
 
         # Frequency data
-        self.freqs = np.arange(20, 200, 10)
+        self.freqs = np.arange(20, 201, 2)
         self.pressure_response = None
         self.spl_response = None
 
@@ -35,24 +35,26 @@ class Simulator:
         # Microphone
         self.microphone = None
 
-    def simulate(self, mesh_path, source, mic_pos):
+    def simulate(self, mesh_path, source_position, mic_positions):
         self.loadMesh(mesh_path)
         self.setup()
-        self.microphone = Microphone(self.domain, mic_pos)
+        self.microphone = Microphone(self.domain, mic_positions)
         self.setupBoundaryConditions()
-        self.setupVariationalFormulation(source)
+        self.setupVariationalFormulation(source_position)
         self.computeFrequencyResponse()
         self.pressureToSpl()
         
         return self.spl_response
         
     def loadMesh(self, mesh_path):
+        print("Loading mesh...")
         mesh_data = gmshio.read_from_msh(mesh_path, MPI.COMM_WORLD, 0, gdim=3)
         self.domain = mesh_data.mesh
         assert mesh_data.facet_tags is not None
         self.facet_tags = mesh_data.facet_tags
         
     def setup(self):
+        print("Initial setup...")
         self.V = fem.functionspace(self.domain, ("Lagrange",1))
         self.q = fem.Function(self.V)
         self.p_a = fem.Function(self.V)
@@ -62,9 +64,11 @@ class Simulator:
     
     def setupBoundaryConditions(self):
         # MVP: only neuman conditions applied on variational formulation
+        print("Setting up BCs...")
         pass
     
-    def setupMonopole(self, source_pos, radius=0.05, Q=1.0):
+    def setupMonopole(self, source_pos, radius=0.3, Q=0.05):
+        print("Setting up Monopole...")
         xs, ys, zs = source_pos
 
         def source_field(x):
@@ -73,11 +77,12 @@ class Simulator:
 
         self.q.interpolate(source_field)
         
-    def setupVariationalFormulation(self, source):
+    def setupVariationalFormulation(self, source_position):
+        print("Setting up variational formulation...")
         p = ufl.TrialFunction(self.V)
         v = ufl.TestFunction(self.V)
         
-        self.setupMonopole(source)
+        self.setupMonopole(source_position)
         
         a = ufl.inner(ufl.grad(p), ufl.grad(v)) * ufl.dx - self.k**2 * ufl.inner(p, v) * ufl.dx
         L = 1j * self.omega * self.rho0 * ufl.conj(v) * self.q *ufl.dx
@@ -95,6 +100,7 @@ class Simulator:
         )
     
     def computeFrequencyResponse(self):
+        print("Computing frequency response...")
         self.pressure_response = np.zeros((len(self.freqs), self.microphone.n_mics), dtype=complex)
         for nf in range(0, len(self.freqs)):
             self.k.value = 2 * np.pi * self.freqs[nf] / self.c
@@ -111,6 +117,7 @@ class Simulator:
                 self.pressure_response[nf] = np.hstack(p_f)
         
     def pressureToSpl(self):
+        print("Pressure to SPL...")
         if self.domain.comm.rank == 0:
             self.spl_response = np.zeros_like(self.pressure_response.real)
             for m in range(self.microphone.n_mics):

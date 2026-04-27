@@ -1,12 +1,13 @@
 import gmsh
 import math
+from pathlib import Path
 
 class Mesher:
-    def __init__(self, params, lc=0.5):
+    def __init__(self, params, lc=0.1):
         self.params = params
         self.lc = lc
     
-    def create(self):
+    def create(self, visualize=False):
         gmsh.initialize()
         gmsh.model.add("room")
         floor_pts = self.getFloorPoints()
@@ -14,9 +15,12 @@ class Mesher:
         volume, floor, ceiling, walls = self.buildGeometry(floor_pts, ceil_pts)
         gmsh.model.geo.synchronize()
         self.addPhysicalGroups(volume, floor, ceiling, walls)
-        self.generateMesh()
-        gmsh.fltk.run()
+        mesh_path = self.generateMesh()
+        if visualize:
+            gmsh.fltk.run()
         gmsh.finalize()
+        
+        return mesh_path
         
     def getFloorPoints(self):
         Lx = self.params["Lx"]
@@ -121,5 +125,10 @@ class Mesher:
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", self.lc)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", self.lc)
 
+        output = Path("data/mesh/mesh.msh")
+        output.parent.mkdir(parents=True, exist_ok=True)
+
         gmsh.model.mesh.generate(dim)
-        gmsh.write("data/mesh/mesh.msh")
+        gmsh.write(str(output))
+
+        return output
