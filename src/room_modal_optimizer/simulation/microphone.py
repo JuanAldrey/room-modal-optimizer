@@ -5,7 +5,7 @@ from dolfinx import (
     geometry,
 )
 
-class MicrophonePressure:
+class Microphone:
     def __init__(self, domain, microphone_position):
         """Initialize microphone(s).
 

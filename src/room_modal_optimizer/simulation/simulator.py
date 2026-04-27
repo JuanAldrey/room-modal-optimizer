@@ -2,7 +2,7 @@ from mpi4py import MPI
 from dolfinx import fem, default_scalar_type
 from dolfinx.io import gmsh as gmshio
 from dolfinx.fem.petsc import LinearProblem
-from microphone import Microphone
+from .microphone import Microphone
 import ufl
 import numpy as np
 import matplotlib.pyplot as plt
