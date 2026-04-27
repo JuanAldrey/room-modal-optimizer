@@ -1,3 +1,0 @@
-class Simulator:
-    def simulate(self, mesh):
-        ...

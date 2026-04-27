@@ -146,7 +146,7 @@ params = {
     "right_angle": -10,
     "front_angle": -20,
     "back_angle": -20
-}     
+}
 
 mesher = Mesher(params, lc=0.3)
 mesher.create()
