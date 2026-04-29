@@ -18,6 +18,8 @@ class Simulator:
         self.problem = None
         self.p_a = None
         self.q = None
+        self.p = None
+        self.v = None
 
         # Frequency data
         self.freqs = np.arange(20, 201, 2)
@@ -56,6 +58,10 @@ class Simulator:
     def setup(self):
         print("Initial setup...")
         self.V = fem.functionspace(self.domain, ("Lagrange",1))
+        
+        self.p = ufl.TrialFunction(self.V)
+        self.v = ufl.TestFunction(self.V)
+        
         self.q = fem.Function(self.V)
         self.p_a = fem.Function(self.V)
 
@@ -63,7 +69,7 @@ class Simulator:
         self.omega = fem.Constant(self.domain, default_scalar_type(0))
     
     def setupBoundaryConditions(self):
-        # MVP: only neuman conditions applied on variational formulation
+        # MVP: only neuman conditions applied directly on variational formulation
         print("Setting up BCs...")
         pass
     
@@ -79,8 +85,6 @@ class Simulator:
         
     def setupVariationalFormulation(self, source_position):
         print("Setting up variational formulation...")
-        p = ufl.TrialFunction(self.V)
-        v = ufl.TestFunction(self.V)
         
         self.setupMonopole(source_position)
         

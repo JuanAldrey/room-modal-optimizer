@@ -34,3 +34,4 @@ mesh_path = mesher.create(visualize=True)
 
 simulator = Simulator()
 simulator.simulate(mesh_path, source_position=(2.0,2.0,1.5), mic_positions=[1, 1, 1.5])
+
