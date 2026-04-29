@@ -77,6 +77,7 @@ solver.setOperators(K, M)
 
 solver.solve()
 
+####
 xr, xi = K.createVecs()
 tol, maxIt = solver.getTolerances()
 nconv = solver.getConverged()

@@ -3,11 +3,15 @@ import math
 from pathlib import Path
 
 class Mesher:
-    def __init__(self, params, lc=0.1):
+    def __init__(self):
+        self.params = None
+        self.lc = None
+        self.room_name = None
+    
+    def create(self, params, lc=0.25, room_name='room', visualize=False):
         self.params = params
         self.lc = lc
-    
-    def create(self, visualize=False):
+        self.room_name = room_name
         gmsh.initialize()
         gmsh.model.add("room")
         floor_pts = self.getFloorPoints()
@@ -125,7 +129,7 @@ class Mesher:
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", self.lc)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", self.lc)
 
-        output = Path("data/mesh/mesh.msh")
+        output = Path(f"data/{self.room_name}/mesh/{self.room_name}_mesh.msh")
         output.parent.mkdir(parents=True, exist_ok=True)
 
         gmsh.model.mesh.generate(dim)

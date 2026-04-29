@@ -1,13 +1,14 @@
 from mpi4py import MPI
 from dolfinx import fem, default_scalar_type
 from dolfinx.io import gmsh as gmshio
-from dolfinx.fem.petsc import LinearProblem
+from dolfinx.io import XDMFFile
+from dolfinx.fem.petsc import LinearProblem, assemble_matrix
 from .microphone import Microphone
+from pathlib import Path
 import ufl
 import numpy as np
-import matplotlib.pyplot as plt
 
-class Simulator:
+class DirectSimulator:
     def __init__(self):
         # Mesh / geometry
         self.domain = None
@@ -15,11 +16,13 @@ class Simulator:
 
         # FEM
         self.V = None
-        self.problem = None
-        self.p_a = None
-        self.q = None
         self.p = None
         self.v = None
+        
+        #FEM - Direct
+        self.direct_problem = None
+        self.p_a = None
+        self.q = None
 
         # Frequency data
         self.freqs = np.arange(20, 201, 2)
@@ -36,8 +39,12 @@ class Simulator:
 
         # Microphone
         self.microphone = None
+        
+        # Room name
+        self.room_name = None
 
-    def simulate(self, mesh_path, source_position, mic_positions):
+    def simulate(self, mesh_path, source_position, mic_positions, room_name='room'):
+        self.room_name = room_name
         self.loadMesh(mesh_path)
         self.setup()
         self.microphone = Microphone(self.domain, mic_positions)
@@ -45,8 +52,8 @@ class Simulator:
         self.setupVariationalFormulation(source_position)
         self.computeFrequencyResponse()
         self.pressureToSpl()
-        
-        return self.spl_response
+    
+        return self.freqs, self.spl_response
         
     def loadMesh(self, mesh_path):
         print("Loading mesh...")
@@ -57,8 +64,7 @@ class Simulator:
         
     def setup(self):
         print("Initial setup...")
-        self.V = fem.functionspace(self.domain, ("Lagrange",1))
-        
+        self.V = fem.functionspace(self.domain, ("Lagrange", 1))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
@@ -85,13 +91,12 @@ class Simulator:
         
     def setupVariationalFormulation(self, source_position):
         print("Setting up variational formulation...")
-        
         self.setupMonopole(source_position)
         
-        a = ufl.inner(ufl.grad(p), ufl.grad(v)) * ufl.dx - self.k**2 * ufl.inner(p, v) * ufl.dx
-        L = 1j * self.omega * self.rho0 * ufl.conj(v) * self.q *ufl.dx
+        a = ufl.inner(ufl.grad(self.p), ufl.grad(self.v)) * ufl.dx - self.k**2 * ufl.inner(self.p, self.v) * ufl.dx
+        L = 1j * self.omega * self.rho0 * ufl.conj(self.v) * self.q *ufl.dx
         
-        self.problem = LinearProblem(
+        self.direct_problem = LinearProblem(
             a,
             L,
             u=self.p_a,
@@ -110,7 +115,7 @@ class Simulator:
             self.k.value = 2 * np.pi * self.freqs[nf] / self.c
             self.omega.value = 2 * np.pi * self.freqs[nf]
 
-            self.problem.solve()
+            self.direct_problem.solve()
             self.p_a.x.scatter_forward()
 
             p_f = self.microphone.listen(self.p_a)
@@ -119,22 +124,12 @@ class Simulator:
             if self.domain.comm.rank == 0:
                 assert p_f is not None
                 self.pressure_response[nf] = np.hstack(p_f)
-        
+                
     def pressureToSpl(self):
         print("Pressure to SPL...")
-        if self.domain.comm.rank == 0:
-            self.spl_response = np.zeros_like(self.pressure_response.real)
-            for m in range(self.microphone.n_mics):
-                spl = 20 * np.log10(
-                    np.abs(self.pressure_response[:, m]) / np.sqrt(2) / 2e-5
-                )
-                self.spl_response[:, m] = spl
+        eps = 1e-12
+        p = np.maximum(np.abs(self.pressure_response), eps)
 
-                plt.plot(self.freqs, spl, label=f"Mic {m+1}")
-
-            plt.grid(True)
-            plt.xlabel("Frequency [Hz]")
-            plt.ylabel("SPL [dB]")
-            plt.xlim([self.freqs[0], self.freqs[-1]])
-            plt.legend()
-            plt.show()
+        self.spl_response = 20 * np.log10(
+            p / np.sqrt(2) / 2e-5
+        )

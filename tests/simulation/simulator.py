@@ -1,27 +1,29 @@
 from room_modal_optimizer.meshing.mesher import Mesher
-from room_modal_optimizer.simulation.simulator import Simulator
+from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
+from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 
+room_name = 'testing_rectangular_4_3_3'
 params = {
     # Plant lengths
     "Lx": 4,
-    "Ly": 4,
+    "Ly": 3,
     "Lz": 3,
 
     # Plant offsets
-    "left_y0": 0.1,
-    "left_y1": 0.2,
-    "right_y0": -0.2,
-    "right_y1": -0.3,
-    "front_x0": 0.4,
+    "left_y0": 0,
+    "left_y1": 0,
+    "right_y0": 0,
+    "right_y1": 0,
+    "front_x0": 0,
     "front_x1": 0,
-    "back_x0": 0.2,
-    "back_x1": -0.3,
+    "back_x0": 0,
+    "back_x1": 0,
 
     # Wall inclination (degrees)
-    "left_angle": 10,
-    "right_angle": -10,
-    "front_angle": 10,
-    "back_angle": -10
+    "left_angle": 0,
+    "right_angle": 0,
+    "front_angle": 0,
+    "back_angle": 0
 }
 
 # lc chosen from highest frequency:
@@ -29,9 +31,12 @@ params = {
 # Use ~6 elems per wavelength:
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
-mesher = Mesher(params, lc=0.25)
-mesh_path = mesher.create(visualize=True)
+mesher = Mesher()
+mesh_path = mesher.create(params, lc=0.25, room_name=room_name, visualize=True)
 
-simulator = Simulator()
-simulator.simulate(mesh_path, source_position=(2.0,2.0,1.5), mic_positions=[1, 1, 1.5])
+modalSimulator = ModalSimulator()
+modalSimulator.simulate(mesh_path, room_name=room_name, export=True)
+
+directSimulator = DirectSimulator()
+directSimulator.simulate(mesh_path, source_position=(2.0,2.0,1.5), mic_positions=[1, 1, 1.5], room_name=room_name)
 
