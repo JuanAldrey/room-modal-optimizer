@@ -13,6 +13,8 @@ class DirectSimulator:
         # Mesh / geometry
         self.domain = None
         self.facet_tags = None
+        self.tags = None
+        self.ds = None
 
         # FEM
         self.V = None
@@ -22,7 +24,6 @@ class DirectSimulator:
         #FEM - Direct
         self.direct_problem = None
         self.p_a = None
-        self.q = None
 
         # Frequency data
         self.freqs = np.arange(20, 201, 2)
@@ -32,25 +33,30 @@ class DirectSimulator:
         # Physical constants
         self.rho0 = 1.225
         self.c = 343.0
+        
+        # Impedance values
+        self.wall_z = None
+        self.floor_z = None
+        self.ceiling_z = None
 
         # Runtime parameters
         self.k = None
         self.omega = None
 
-        # Microphone
+        # Microphone and source
         self.microphone = None
+        self.source_strength = None
         
         # Room name
         self.room_name = None
 
-    def simulate(self, mesh_path, source_position, mic_positions, room_name='room'):
+    def simulate(self, mesh_path, mic_positions, room_name='room', export=False):
         self.room_name = room_name
         self.loadMesh(mesh_path)
         self.setup()
         self.microphone = Microphone(self.domain, mic_positions)
-        self.setupBoundaryConditions()
-        self.setupVariationalFormulation(source_position)
-        self.computeFrequencyResponse()
+        self.setupVariationalFormulation()
+        self.computeFrequencyResponse(export)
         self.pressureToSpl()
     
         return self.freqs, self.spl_response
@@ -60,7 +66,16 @@ class DirectSimulator:
         mesh_data = gmshio.read_from_msh(mesh_path, MPI.COMM_WORLD, 0, gdim=3)
         self.domain = mesh_data.mesh
         assert mesh_data.facet_tags is not None
+        self.tags = {
+            name: tag
+            for name, (dim, tag) in mesh_data.physical_groups.items()
+        }
         self.facet_tags = mesh_data.facet_tags
+        self.ds = ufl.Measure(
+            "ds",
+            domain=self.domain,
+            subdomain_data=self.facet_tags
+        )
         
     def setup(self):
         print("Initial setup...")
@@ -68,33 +83,24 @@ class DirectSimulator:
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
-        self.q = fem.Function(self.V)
         self.p_a = fem.Function(self.V)
 
         self.k = fem.Constant(self.domain, default_scalar_type(0))
         self.omega = fem.Constant(self.domain, default_scalar_type(0))
-    
-    def setupBoundaryConditions(self):
-        # MVP: only neuman conditions applied directly on variational formulation
-        print("Setting up BCs...")
-        pass
-    
-    def setupMonopole(self, source_pos, radius=0.3, Q=0.05):
-        print("Setting up Monopole...")
-        xs, ys, zs = source_pos
-
-        def source_field(x):
-            r2 = (x[0] - xs)**2 + (x[1] - ys)**2 + (x[2] - zs)**2
-            return np.where(r2 < radius**2, Q, 0.0)
-
-        self.q.interpolate(source_field)
+        self.source_strength = fem.Constant(self.domain, default_scalar_type(0.01))
         
-    def setupVariationalFormulation(self, source_position):
+        self.wall_z = fem.Constant(self.domain, default_scalar_type(50.0 + 0j))
+        self.floor_z = fem.Constant(self.domain, default_scalar_type(100.0 + 0j))
+        self.ceiling_z = fem.Constant(self.domain, default_scalar_type(50.0 + 0j))
+        
+    def setupVariationalFormulation(self):
         print("Setting up variational formulation...")
-        self.setupMonopole(source_position)
         
         a = ufl.inner(ufl.grad(self.p), ufl.grad(self.v)) * ufl.dx - self.k**2 * ufl.inner(self.p, self.v) * ufl.dx
-        L = 1j * self.omega * self.rho0 * ufl.conj(self.v) * self.q *ufl.dx
+        a += 1j * self.k / self.floor_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Floor"])
+        a += 1j * self.k / self.ceiling_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Ceiling"])
+        a += 1j * self.k / self.wall_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Walls"])
+        L = - 1j * self.omega * self.rho0 * self.source_strength * ufl.conj(self.v) * self.ds(self.tags["Source"])
         
         self.direct_problem = LinearProblem(
             a,
@@ -108,22 +114,40 @@ class DirectSimulator:
             petsc_options_prefix="helmholtz",
         )
     
-    def computeFrequencyResponse(self):
+    def computeFrequencyResponse(self, export):
         print("Computing frequency response...")
         self.pressure_response = np.zeros((len(self.freqs), self.microphone.n_mics), dtype=complex)
+        
+        if export:
+            output = Path(f"data/{self.room_name}/direct/{self.room_name}_direct.xdmf")
+            output.parent.mkdir(parents=True, exist_ok=True)
+            xdmf = XDMFFile(self.domain.comm, str(output), "w")
+            xdmf.write_mesh(self.domain)
+        else:
+            xdmf = None
+        
         for nf in range(0, len(self.freqs)):
-            self.k.value = 2 * np.pi * self.freqs[nf] / self.c
-            self.omega.value = 2 * np.pi * self.freqs[nf]
+            freq = self.freqs[nf]
+
+            self.k.value = 2 * np.pi * freq / self.c
+            self.omega.value = 2 * np.pi * freq
 
             self.direct_problem.solve()
             self.p_a.x.scatter_forward()
+            
+            if export and freq % 20 == 0:
+                self.p_a.name = "pressure"
+                xdmf.write_function(self.p_a, float(freq))
 
             p_f = self.microphone.listen(self.p_a)
             p_f = self.domain.comm.gather(p_f, root=0)
 
             if self.domain.comm.rank == 0:
                 assert p_f is not None
-                self.pressure_response[nf] = np.hstack(p_f)
+                self.pressure_response[nf] = np.hstack(p_f).ravel()
+                
+        if xdmf is not None:
+            xdmf.close()
                 
     def pressureToSpl(self):
         print("Pressure to SPL...")

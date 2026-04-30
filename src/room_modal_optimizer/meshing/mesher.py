@@ -45,12 +45,6 @@ class Mesher:
             gmsh.fltk.run()
         gmsh.finalize()
         
-        print("volume:", self.volume)
-        print("floor:", self.floor)
-        print("ceiling:", self.ceiling)
-        print("walls:", self.walls)
-        print("source:", self.source)
-        
         return mesh_path
         
     def setFloorPoints(self):

@@ -10,15 +10,18 @@ class Microphone:
         """Initialize microphone(s).
 
         Args:
-            domain: The domain to insert microphones on
+            domain: The domain to insert microphones on.
             microphone_position: Position of the microphone(s).
-                Assumed to be ordered as ``(mic0_x, mic1_x, ..., mic0_y, mic1_y, ..., mic0_z, mic1_z, ...)``
-
+                Expected as:
+                    [(x0, y0, z0), (x1, y1, z1), ...]
+                Also accepts a single mic as:
+                    [x0, y0, z0]
         """
         self._domain = domain
         self._position = np.asarray(
-            microphone_position, dtype=domain.geometry.x.dtype
-        ).reshape(3, -1)
+            microphone_position,
+            dtype=domain.geometry.x.dtype
+        ).reshape(-1, 3).T
         self._local_cells, self._local_position = self.compute_local_microphones()
         self.n_mics = self._position.shape[1]
 

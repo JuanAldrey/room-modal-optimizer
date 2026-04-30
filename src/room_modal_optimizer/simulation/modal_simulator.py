@@ -92,10 +92,15 @@ class ModalSimulator:
         if nconv > 0:
             for i in range(nconv):
                 k = self.modal_problem.getEigenpair(i, xr, xi)
-                fn = np.sqrt(k.real) / (2 * np.pi) * self.c
+                lam = k.real
 
-                if fn < 1.0:
+                if not np.isfinite(lam):
                     continue
+
+                if lam <= 1e-10:
+                    continue
+
+                fn = np.sqrt(lam) / (2 * np.pi) * self.c
 
                 self.eig_freq.append(fn)
 

@@ -1,36 +1,28 @@
-from dolfinx.io import gmsh as gmshio
 from room_modal_optimizer.meshing.mesher import Mesher
-from mpi4py import MPI
-from dolfinx import fem, default_scalar_type
-from dolfinx.io import gmsh as gmshio
-from dolfinx.io import XDMFFile
-from dolfinx.fem.petsc import assemble_matrix
-import ufl
-import numpy as np
-import matplotlib.pyplot as plt
-from slepc4py import SLEPc
+from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 
+room_name = 'testing_rectangular_5_3_4'
 params = {
     # Plant lengths
-    "Lx": 4,
-    "Ly": 4,
-    "Lz": 3,
+    "Lx": 5,
+    "Ly": 3,
+    "Lz": 4,
 
     # Plant offsets
-    "left_y0": 0.1,
-    "left_y1": 0.2,
-    "right_y0": -0.2,
-    "right_y1": -0.3,
-    "front_x0": 0.4,
+    "left_y0": 0,
+    "left_y1": 0,
+    "right_y0": 0,
+    "right_y1": 0,
+    "front_x0": 0,
     "front_x1": 0,
-    "back_x0": 0.2,
-    "back_x1": -0.3,
+    "back_x0": 0,
+    "back_x1": 0,
 
     # Wall inclination (degrees)
-    "left_angle": 10,
-    "right_angle": -10,
-    "front_angle": 10,
-    "back_angle": -10
+    "left_angle": 0,
+    "right_angle": 0,
+    "front_angle": 0,
+    "back_angle": 0
 }
 
 # lc chosen from highest frequency:
@@ -38,69 +30,8 @@ params = {
 # Use ~6 elems per wavelength:
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
-mesher = Mesher(params, lc=0.25)
-mesh_path = mesher.create(visualize=False)
+mesher = Mesher()
+mesh_path = mesher.create(params, lc=0.25, room_name=room_name, visualize=False)
 
-mesh_data = gmshio.read_from_msh(mesh_path, MPI.COMM_WORLD, 0, gdim=3)
-domain = mesh_data.mesh
-assert mesh_data.facet_tags is not None
-facet_tags = mesh_data.facet_tags
-
-rho0 = 1.225
-c = 343.0
-
-V = fem.functionspace(domain, ("Lagrange", 1))
-p = ufl.TrialFunction(V)
-v = ufl.TestFunction(V)
-
-k_form = fem.form(ufl.inner(ufl.grad(p), ufl.grad(v)) * ufl.dx)
-m_form = fem.form(ufl.inner(p, v) * ufl.dx)
-
-K = assemble_matrix(k_form, [])
-M = assemble_matrix(m_form, [])
-
-K.assemble()
-M.assemble()
-
-# Eigensolver
-solver = SLEPc.EPS().create()
-solver.setDimensions(20)
-solver.setProblemType(SLEPc.EPS.ProblemType.GHEP)
-
-st = SLEPc.ST().create()
-st.setType(SLEPc.ST.Type.SINVERT)
-st.setShift(0.1)
-st.setFromOptions()
-
-solver.setST(st)
-solver.setOperators(K, M)
-
-solver.solve()
-
-####
-xr, xi = K.createVecs()
-tol, maxIt = solver.getTolerances()
-nconv = solver.getConverged()
-
-eig_vector = []
-eig_freq = []
-
-if nconv > 0:
-    for i in range(nconv):
-        k = solver.getEigenpair(i, xr , xi)
-        fn = np.sqrt(k.real) / (2 * np.pi) * c
-        eig_freq.append(fn)
-        
-        print("%12f Hz" % fn)
-        vect = xr.getArray()
-        eig_vector.append(vect.copy())
-        
-for i in range(nconv):
-    with XDMFFile(domain.comm, "Mode_" + str(np.round(eig_freq[i])) + "_Hz.xdmf", "w") as xdmf:
-        p = fem.Function(V)
-        p.x.array[:] = eig_vector[i]
-        p.x.scatter_forward()
-        p.name = "p"
-        
-        xdmf.write_mesh(domain)
-        xdmf.write_function(p)
+modalSimulator = ModalSimulator()
+modalSimulator.simulate(mesh_path, room_name=room_name, export=True)

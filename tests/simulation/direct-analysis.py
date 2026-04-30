@@ -1,6 +1,6 @@
 from room_modal_optimizer.meshing.mesher import Mesher
-from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
+import matplotlib.pyplot as plt
 
 room_name = 'testing_rectangular_4_3_3'
 params = {
@@ -32,11 +32,31 @@ params = {
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
 mesher = Mesher()
-mesh_path = mesher.create(params, lc=0.25, room_name=room_name, visualize=True)
-
-modalSimulator = ModalSimulator()
-modalSimulator.simulate(mesh_path, room_name=room_name, export=True)
+mesh_path = mesher.create(params, room_name="standard", visualize=False, source_pos=(2.5, 2.5, 1.5))
 
 directSimulator = DirectSimulator()
-directSimulator.simulate(mesh_path, source_position=(2.0,2.0,1.5), mic_positions=[1, 1, 1.5], room_name=room_name)
+freqs, spl_responses = directSimulator.simulate(
+    mesh_path, 
+    mic_positions = [
+        (1, 1, 1.5),
+        (2, 1, 1.5),
+    ],
+    room_name=room_name,
+    export=True
+    )
+
+labels = ["Mic (1,1,1.5)", "Mic (2,1,1.5)"]
+
+plt.figure()
+for m in range(spl_responses.shape[1]):
+    plt.plot(freqs, spl_responses[:, m], label=labels[m])
+
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("SPL [dB]")
+plt.title("SPL response")
+plt.grid(True)
+plt.legend()
+plt.show()
+
+
 
