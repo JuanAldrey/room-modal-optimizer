@@ -1,151 +1,157 @@
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+import pyvista as pv
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
+from . import dummy_functions as dumF
 
 class RoomModalOptimizer(ttk.Frame):
     def __init__(self, master):
         super().__init__(master)
         self.pack(fill=BOTH, expand=YES)
 
-        self.room_params = {
-            # Plant lengths
-            "Lx": ttk.StringVar(), "Ly": ttk.StringVar(), "Lz": ttk.StringVar(),
-        
-            # Plant offsets
-            "left_y0": ttk.StringVar(), "left_y1": ttk.StringVar(),
-            "right_y0": ttk.StringVar(), "right_y1": ttk.StringVar(),
-            "front_x0": ttk.StringVar(), "front_x1": ttk.StringVar(),
-            "back_x0": ttk.StringVar(),  "back_x1": ttk.StringVar(),
-        
-            # Wall inclination (degrees)
-            "left_angle": ttk.StringVar(), "right_angle": ttk.StringVar(),
-            "front_angle": ttk.StringVar(), "back_angle": ttk.StringVar()
-        }
+        # 1. Variables y Estilos
+        self._init_vars()
+        self._setup_styles()
 
-
-        #Cuadrícula Principal
-        self.columnconfigure(0, weight=80)
-        self.columnconfigure(1, weight=20)
+        # 2. Layout Principal (75/25 aprox)
+        self.columnconfigure(0, weight=3, uniform="main") # Panel Izquierdo
+        self.columnconfigure(1, weight=1, uniform="main") # Panel Derecho
         self.rowconfigure(0, weight=1)
 
-        # Panel Izquierdo (Gráficos)
         self.left_panel = ttk.Frame(self)
         self.left_panel.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
         
-        # Panel Derecho (Parámetros y Funciones)
         self.right_panel = ttk.Frame(self)
         self.right_panel.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-
-        self.create_graphs()
+        
+        # 3. Construcción de Interfaz
+        self.create_graphs_panel()
         self.create_right_functions()
 
-    def create_graphs(self):
-        """Área reservada para los gráficos"""
-       
-        placeholder = ttk.LabelFrame(self.left_panel, text=" Gráficos y Resultados")
-        placeholder.pack(fill=BOTH, expand=YES)
-        
+    def _init_vars(self):
+        """Inicializa el diccionario de parámetros y variables de control"""
+        self.msh_path = ttk.StringVar()
+        keys = [
+            "Lx", "Ly", "Lz", "left_y0", "left_y1", "right_y0", "right_y1",
+            "front_x0", "front_x1", "back_x0", "back_x1",
+            "left_angle", "right_angle", "front_angle", "back_angle"
+        ]
+        self.room_params = {k: ttk.StringVar() for k in keys}
 
+    def _setup_styles(self):
+        """Configuración de fuentes globales"""
+        self.style = ttk.Style()
+        self.style.configure("Titulo.TLabel", font=("Helvetica", 11, "bold"))
+
+    def create_graphs_panel(self):
+        """Configura el área de visualización del mesh"""
+        self.graph_frame = ttk.LabelFrame(self.left_panel, text=" Room Mesh View")
+        self.graph_frame.pack(fill=BOTH, expand=YES, padx=5, pady=5)
+
+        # Matplotlib Figure para embeber PyVista
+        self.fig = plt.Figure(figsize=(5, 5), dpi=100, facecolor='#2b3e50')
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.graph_frame)
+        self.canvas_widget = self.canvas.get_tk_widget()
+        self.canvas_widget.pack(fill=BOTH, expand=YES, padx=5, pady=5)
+
+    def _create_input_group(self, parent, title, items, cols=3, uniform_tag="group"):
+        """Función auxiliar para crear grupos de etiquetas y entradas de forma masiva"""
+        ttk.Label(parent, text=title, style="Titulo.TLabel").pack(anchor="w", pady=(10, 5))
+        
+        container = ttk.Frame(parent)
+        container.pack(fill=X, pady=(0, 10))
+        
+        # Configurar pesos de columnas para que los Entries sean elásticos
+        entry_cols = [i*2 + 1 for i in range(cols)]
+        container.columnconfigure(entry_cols, weight=1, uniform=uniform_tag)
+
+        for i, (key, label) in enumerate(items):
+            r, c = i // cols, (i % cols) * 2
+            ttk.Label(container, text=label).grid(row=r, column=c, padx=2, pady=2, sticky="w")
+            ttk.Entry(container, textvariable=self.room_params[key], width=5).grid(row=r, column=c+1, sticky="ew", padx=5, pady=2)
 
     def create_right_functions(self):
-        self.right_panel.rowconfigure(0, weight=1)
-        self.right_panel.rowconfigure(1, weight=0)
+        """Organiza el panel de control derecho"""
         self.right_panel.columnconfigure(0, weight=1)
-
-        # Contenedor principal de parámetros (Scrollable si fuera necesario en el futuro)
-        params_frame = ttk.Frame(self.right_panel)
-        params_frame.grid(row=0, column=0, sticky="nsew")
-        params_frame.columnconfigure(0, weight=1)
-
-        # --- 1. PLANT LENGTHS ---
-        ttk.Label(params_frame, text="Plant Lengths [m]:", font=("Helvetica", 12, "bold")).grid(row=0, column=0, sticky="w", pady=(10, 5))
         
-        len_container = ttk.Frame(params_frame)
-        len_container.grid(row=1, column=0, sticky="ew", pady=(0, 15))
-        len_container.columnconfigure((1, 3, 5), weight=1, uniform="len")
-        
-        for i, (key, label) in enumerate([("Lx", "Lx:"), ("Ly", "Ly:"), ("Lz", "Lz:")]):
-            ttk.Label(len_container, text=label).grid(row=0, column=i*2, padx=2)
-            ttk.Entry(len_container, textvariable=self.room_params[key], width=2).grid(row=0, column=i*2+1, sticky="ew", padx=5)
+        # --- SECCIONES DE INPUT ---
+        params_container = ttk.Frame(self.right_panel)
+        params_container.pack(fill=BOTH, expand=YES)
 
-        # --- 2. PLANT OFFSETS ---
-        ttk.Label(params_frame, text="Plant Offsets [m]:", font=("Helvetica", 12, "bold")).grid(row=2, column=0, sticky="w", pady=(10, 5))
+        # 1. Lengths
+        self._create_input_group(params_container, "Plant Lengths [m]:", 
+                                [("Lx", "Lx:"), ("Ly", "Ly:"), ("Lz", "Lz:")], uniform_tag="len")
         
-        off_container = ttk.Frame(params_frame)
-        off_container.grid(row=3, column=0, sticky="ew", pady=(0, 15))
-        off_container.columnconfigure((1, 3, 5, 7), weight=1, uniform="off")
+        # 2. Offsets (en 2 filas de 4 columnas para que quepan bien)
+        off_items = [("left_y0", "L-Y0:"), ("left_y1", "L-Y1:"), ("right_y0", "R-Y0:"), ("right_y1", "R-Y1:"),
+                     ("front_x0", "F-X0:"), ("front_x1", "F-X1:"), ("back_x0", "B-X0:"), ("back_x1", "B-X1:")]
+        self._create_input_group(params_container, "Plant Offsets [m]:", off_items, cols=4, uniform_tag="off")
 
-        # Disposición en 2 filas para que no quede muy apretado
-        off_items = [
-            ("left_y0", "L-Y0:"), ("left_y1", "L-Y1:"), ("right_y0", "R-Y0:"), ("right_y1", "R-Y1:"),
-            ("front_x0", "F-X0:"), ("front_x1", "F-X1:"), ("back_x0", "B-X0:"), ("back_x1", "B-X1:")
-        ]
-        
-        for i, (key, label) in enumerate(off_items):
-            row = i // 4
-            col = (i % 4) * 2
-            ttk.Label(off_container, text=label).grid(row=row, column=col, padx=2, pady=2)
-            ttk.Entry(off_container, textvariable=self.room_params[key], width=2).grid(row=row, column=col+1, sticky="ew", padx=5, pady=2)
+        # 3. Inclination
+        ang_items = [("left_angle", "Left:"), ("right_angle", "Right:"), ("front_angle", "Front:"), ("back_angle", "Back:")]
+        self._create_input_group(params_container, "Wall Inclination [deg]:", ang_items, cols=4, uniform_tag="ang")
 
-        # --- 3. WALL INCLINATION ---
-        ttk.Label(params_frame, text="Wall Inclination [deg]:", font=("Helvetica", 12, "bold")).grid(row=4, column=0, sticky="w", pady=(10, 5))
-        
-        ang_container = ttk.Frame(params_frame)
-        ang_container.grid(row=5, column=0, sticky="ew", pady=(0, 15))
-        ang_container.columnconfigure((1, 3, 5, 7), weight=1, uniform="ang")
+        # --- BOTONES DE ACCIÓN ---
+        btn_frame = ttk.Frame(self.right_panel)
+        btn_frame.pack(fill=X, pady=20)
+        btn_frame.columnconfigure((0, 1), weight=1, uniform="btns")
 
-        ang_items = [
-            ("left_angle", "Left:"), ("right_angle", "Right:"), 
-            ("front_angle", "Front:"), ("back_angle", "Back:")
+        # Configuración compacta de botones
+        buttons = [
+            ("Calculate", SUCCESS, self.execute_pipeline, 0, 0),
+            ("Export Room Data", SECONDARY, self.export_rd, 0, 1),
+            ("Export Modal Response", SECONDARY, self.export_mr, 1, 0),
+            ("Clear", DANGER, self.clear_entries, 1, 1)
         ]
 
-        for i, (key, label) in enumerate(ang_items):
-            ttk.Label(ang_container, text=label).grid(row=0, column=i*2, padx=2)
-            ttk.Entry(ang_container, textvariable=self.room_params[key], width=2).grid(row=0, column=i*2+1, sticky="ew", padx=5)
+        for text, style, cmd, r, c in buttons:
+            ttk.Button(btn_frame, text=text, bootstyle=style, command=cmd).grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
 
-
-        # Contenedor de funciones
-        functions_frame = ttk.Frame(self.right_panel)
-        functions_frame.grid(row=1, column=0, sticky="nsew", pady=15)
-
-        functions_frame.columnconfigure(0, weight=1) # Espacio izquierdo
-        functions_frame.columnconfigure(1, weight=2) # Botón col 1
-        functions_frame.columnconfigure(2, weight=2) # Botón col 2
-        functions_frame.columnconfigure(3, weight=1) # Espacio derecho
+    def display_mesh_pyvista(self, msh_path):
+        """Renderizado de alta calidad con PyVista embebido"""
+        if not msh_path: return
         
-        functions_frame.rowconfigure(0, weight=1)
-        functions_frame.rowconfigure(1, weight=1)
+        try:
+            mesh = pv.read(msh_path)
+            plotter = pv.Plotter(off_screen=True)
+            plotter.set_background("#2b3e50")
+            
+            plotter.add_mesh(mesh, show_edges=True, color="silver", edge_color="#1a1a1a", opacity=0.9)
+            plotter.view_isometric()
+            
+            screenshot = plotter.screenshot()
+            
+            self.fig.clear()
+            ax = self.fig.add_subplot(111)
+            ax.imshow(screenshot)
+            ax.axis('off')
+            self.fig.tight_layout(pad=0)
+            self.canvas.draw()
+            plotter.close()
 
-        self.btn_calc = ttk.Button(
-            functions_frame, text="Calculate", bootstyle=SUCCESS, command=self.execute_pipeline
-        )
-        self.btn_calc.grid(row=0, column=1, padx=5, pady=5, sticky="nsew")
-
-        self.btn_rd = ttk.Button(
-            functions_frame, text="Export Room Data", bootstyle=SECONDARY, command=self.export_rd
-        )
-        self.btn_rd.grid(row=0, column=2, padx=5, pady=5, sticky="nsew")
-
-        self.btn_mr = ttk.Button(
-            functions_frame, text="Export Modal Response", bootstyle=SECONDARY, command=self.export_mr
-        )
-        self.btn_mr.grid(row=1, column=1, padx=5, pady=5, sticky="nsew")
-
-        self.btn_clear = ttk.Button(
-            functions_frame, text="Clear", bootstyle=DANGER, command=self.clear_entries
-        )
-        self.btn_clear.grid(row=1, column=2, padx=5, pady=5, sticky="nsew")
+        except Exception as e:
+            print(f"Error PyVista Render: {e}")
 
     # --- Callbacks ---
-    def execute_pipeline(self): print("Calculate")
-    def export_rd(self): print("Export RD")
-    def export_mr(self): print("Export MR")
-    def clear_entries(self): print("Clear")
+    def execute_pipeline(self): 
+        # Recolectar datos
+        data = {k: float(v.get()) for k, v in self.room_params.items()}      
+
+        # Obtener path del dummy
+        path = dumF.gui_get_mesh_path(data)
+        if path:
+            self.msh_path.set(path)
+            self.display_mesh_pyvista(path)
+
+    def export_rd(self): print("Exporting Room Data...")
+    def export_mr(self): print("Exporting Modal Response...")
+    def clear_entries(self):
+        for var in self.room_params.values(): var.set("")
+        self.fig.clear()
+        self.canvas.draw()
 
 if __name__ == "__main__":
-    app = ttk.Window(
-        title="Room Modal Optimizer", 
-        themename="superhero", 
-        size=(1400, 900)
-    )
+    app = ttk.Window(title="Room Modal Optimizer", themename="superhero", size=(1400, 900))
     RoomModalOptimizer(app)
     app.mainloop()
