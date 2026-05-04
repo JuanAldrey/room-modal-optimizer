@@ -2,12 +2,12 @@ from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 import matplotlib.pyplot as plt
 
-room_name = 'testing_rectangular_4_3_3'
+room_name = 'testing_rectangular_5_3_4'
 params = {
     # Plant lengths
-    "Lx": 4,
+    "Lx": 5,
     "Ly": 3,
-    "Lz": 3,
+    "Lz": 4,
 
     # Plant offsets
     "left_y0": 0,
@@ -32,7 +32,7 @@ params = {
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
 mesher = Mesher()
-mesh_path = mesher.create(params, room_name="standard", visualize=False, source_pos=(2.5, 2.5, 1.5))
+mesh_path = mesher.create(params, room_name=room_name, visualize=False, source_pos=(2.5, 2.5, 1.5))
 
 directSimulator = DirectSimulator()
 freqs, spl_responses = directSimulator.simulate(
