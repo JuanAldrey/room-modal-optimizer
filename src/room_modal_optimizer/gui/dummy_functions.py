@@ -1,5 +1,5 @@
 from src.room_modal_optimizer.meshing.mesher import Mesher
-#from src.room_modal_optimizer.simulation.direct_simulator import DirectSimulator
+from src.room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 
 def gui_get_mesh_path(params):
     mesher = Mesher()
