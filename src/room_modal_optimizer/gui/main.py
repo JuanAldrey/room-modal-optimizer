@@ -9,7 +9,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QLabel, QLineEdit,
     QPushButton, QGridLayout, QHBoxLayout, QVBoxLayout,
-    QSizePolicy, QGroupBox
+    QSizePolicy, QGroupBox, QComboBox
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -28,10 +28,8 @@ class RoomModalOptimizer(QWidget):
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
 
-        left  = self._build_left_panel()
-        right = self._build_right_panel()
-        root.addWidget(left,  stretch=3)
-        root.addWidget(right, stretch=1)
+        root.addWidget(self._build_left_panel(),  stretch=3)
+        root.addWidget(self._build_right_panel(), stretch=1)
 
     def _init_vars(self):
         keys = [
@@ -43,20 +41,67 @@ class RoomModalOptimizer(QWidget):
         self.room_params: dict[str, QLineEdit] = {}
         self.msh_path = ""
 
-    # ── Panel izquierdo ───────────────────────────────────────────────────────
-    def _build_left_panel(self) -> QGroupBox:
+    # ── Panel izquierdo (mesh + plots) ────────────────────────────────────────
+    def _build_left_panel(self) -> QWidget:
+        panel = QWidget()
+        lay   = QVBoxLayout(panel)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        lay.addWidget(self._build_mesh_view(),  stretch=3)
+        lay.addWidget(self._build_placeholder("Modes Distribution"), stretch=1)
+        lay.addWidget(self._build_placeholder("Modal Response"),     stretch=1)
+
+        return panel
+
+    def _build_mesh_view(self) -> QGroupBox:
         box = QGroupBox(" Room Mesh View")
-        lay = QVBoxLayout(box)
+        outer = QVBoxLayout(box)
+
+        # Contenedor con posicionamiento absoluto para superponer el combo
+        container = QWidget()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        outer.addWidget(container)
 
         bg = self.palette().color(self.backgroundRole()).name()
         self.fig = plt.Figure(facecolor=bg)
         self.canvas = FigureCanvas(self.fig)
-        self.canvas.setStyleSheet(f"background-color: {bg};")
+        self.canvas.setParent(container)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        lay.addWidget(self.canvas)
+
+        # Combo flotante en esquina superior derecha
+        self.view_combo = QComboBox(container)
+        for label, key in [("Isometric","iso"), ("Top","xy"), ("Front","xz"), ("Side","yz")]:
+            self.view_combo.addItem(label, key)
+        self.view_combo.setFixedWidth(110)
+        self.view_combo.activated.connect(
+            lambda: self._set_view(self.view_combo.currentData())
+        )
+
+        # Layout para posicionar canvas y reubicar combo al resize
+        canvas_lay = QVBoxLayout(container)
+        canvas_lay.setContentsMargins(0, 0, 0, 0)
+        canvas_lay.addWidget(self.canvas)
+
+        # Posicionar el combo encima vía evento de resize
+        container.resizeEvent = lambda e: self.view_combo.move(
+            container.width() - self.view_combo.width() - 8, 8
+        )
+
         return box
 
-    # ── Panel derecho ─────────────────────────────────────────────────────────
+    def _build_placeholder(self, title: str) -> QGroupBox:
+        box = QGroupBox(f" {title}")
+        box.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        box.setMinimumHeight(150)
+        lay = QVBoxLayout(box)
+        lbl = QLabel(f"[ {title} ]")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet("color: #555555; font-size: 14pt;")
+        lay.addWidget(lbl)
+        return box
+
+    # ── Panel derecho (entries + botones) ─────────────────────────────────────
     def _build_right_panel(self) -> QWidget:
         panel = QWidget()
         lay   = QVBoxLayout(panel)
@@ -146,21 +191,24 @@ class RoomModalOptimizer(QWidget):
         return frame
 
     # ── Renderizado ───────────────────────────────────────────────────────────
-    def display_mesh_pyvista(self, msh_path: str) -> None:
+    def display_mesh_pyvista(self, msh_path: str, view: str = "iso") -> None:
         if not msh_path:
             return
         try:
-            bg = self.palette().color(self.backgroundRole()).name()
-
+            bg      = self.palette().color(self.backgroundRole()).name()
             mesh    = pv.read(msh_path)
-            outline = mesh.outline()
+            surface = mesh.extract_surface(algorithm='dataset_surface')
 
             plotter = pv.Plotter(off_screen=True)
             plotter.set_background(bg)
-            plotter.add_mesh(outline, color="silver", line_width=2)
-            plotter.view_isometric()
-            plotter.reset_camera()
+            plotter.add_mesh(surface, color="silver", show_edges=False, opacity=0.3)
 
+            if   view == "xy":  plotter.view_xy()
+            elif view == "xz":  plotter.view_xz()
+            elif view == "yz":  plotter.view_yz()
+            else:               plotter.view_isometric()
+
+            plotter.reset_camera()
             screenshot = plotter.screenshot()
             plotter.close()
 
@@ -177,6 +225,10 @@ class RoomModalOptimizer(QWidget):
             print(f"Error PyVista Render: {e}")
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
+    def _set_view(self, view: str) -> None:
+        if self.msh_path:
+            self.display_mesh_pyvista(self.msh_path, view)
+
     def _set_to_zero(self, keys):
         for k in keys:
             self.room_params[k].setText("0")
