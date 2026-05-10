@@ -83,9 +83,21 @@ class RoomModalOptimizer(QWidget):
         canvas_lay.setContentsMargins(0, 0, 0, 0)
         canvas_lay.addWidget(self.canvas)
 
-        # Posicionar el combo encima vía evento de resize
-        container.resizeEvent = lambda e: self.view_combo.move(
-            container.width() - self.view_combo.width() - 8, 8
+        # Overlay de cálculo
+        self.overlay = QLabel("Calculating...", container)
+        self.overlay.setAlignment(Qt.AlignCenter)
+        self.overlay.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 160);
+            color: white;
+            font-size: 16pt;
+            font-weight: bold;
+            border-radius: 8px;
+        """)
+        self.overlay.hide()
+
+        container.resizeEvent = lambda e: (
+            self.view_combo.move(container.width() - self.view_combo.width() - 8, 8),
+            self.overlay.setGeometry(0, 0, container.width(), container.height())
         )
 
         return box
@@ -239,10 +251,14 @@ class RoomModalOptimizer(QWidget):
         except ValueError:
             print("Error: todos los campos deben ser numéricos.")
             return
+        self.overlay.show()
+        self.overlay.raise_()
+        QApplication.processEvents()
         path = dumF.gui_get_mesh_path(data)
         if path:
             self.msh_path = path
             self.display_mesh_pyvista(path)
+        self.overlay.hide()
 
     def export_rd(self):  print("Exporting Room Data...")
     def export_mr(self):  print("Exporting Modal Response...")
