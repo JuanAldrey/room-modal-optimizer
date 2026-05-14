@@ -1,28 +1,28 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 
-room_name = 'testing_rectangular_5_3_4'
+room_name = 'testing_non_rectangular_6_4_3'
 params = {
     # Plant lengths
-    "Lx": 5,
-    "Ly": 3,
-    "Lz": 4,
+    "Lx": 6,
+    "Ly": 4,
+    "Lz": 3,
 
     # Plant offsets
-    "left_y0": 0,
-    "left_y1": 0,
-    "right_y0": 0,
-    "right_y1": 0,
-    "front_x0": 0,
-    "front_x1": 0,
-    "back_x0": 0,
-    "back_x1": 0,
+    "left_y0": 0.5,
+    "left_y1": -0.5,
+    "right_y0": -0.4,
+    "right_y1": 0.4,
+    "front_x0": 0.6,
+    "front_x1": -0.6,
+    "back_x0": 0.7,
+    "back_x1": 0.7,
 
     # Wall inclination (degrees)
-    "left_angle": 0,
-    "right_angle": 0,
-    "front_angle": 0,
-    "back_angle": 0
+    "left_angle": 6,
+    "right_angle": 8,
+    "front_angle": 7,
+    "back_angle": 5
 }
 
 # lc chosen from highest frequency:
