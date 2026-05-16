@@ -1,7 +1,7 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 
-room_name = 'testing_non_rectangular_6_4_3'
+room_name = 'testing_non_rectangular_6_4_3_3'
 params = {
     # Plant lengths
     "Lx": 6,
@@ -34,4 +34,6 @@ mesher = Mesher()
 mesh_path = mesher.create(params, lc=0.25, room_name=room_name, visualize=False)
 
 modalSimulator = ModalSimulator()
-modalSimulator.simulate(mesh_path, room_name=room_name, export=True)
+eig_freq, eig_vector = modalSimulator.simulate(mesh_path, room_name=room_name, export=False)
+
+print(eig_freq)

@@ -53,7 +53,7 @@ class ModalSimulator:
         self.facet_tags = mesh_data.facet_tags
         
     def setup(self):
-        self.V = fem.functionspace(self.domain, ("Lagrange", 1))
+        self.V = fem.functionspace(self.domain, ("Lagrange", 2))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
@@ -74,7 +74,7 @@ class ModalSimulator:
 
         st = SLEPc.ST().create()
         st.setType(SLEPc.ST.Type.SINVERT)
-        st.setShift(0.1)
+        st.setShift(0.839)
         st.setFromOptions()
 
         self.modal_problem.setST(st)
