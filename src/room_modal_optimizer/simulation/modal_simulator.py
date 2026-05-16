@@ -39,11 +39,16 @@ class ModalSimulator:
         self.setup()
         self.computeModalAnalysis()
         self.obtainModes()
+        pairs = sorted(zip(self.eig_freq, self.eig_vector), key=lambda x: x[0])
+
+        self.eig_freq = [freq for freq, vec in pairs]
+        self.eig_vector = [vec for freq, vec in pairs]
+
         if export:
             self.exportModes()
-        
+
         return self.eig_freq, self.eig_vector
-        
+
         
     def loadMesh(self, mesh_path):
         print("Loading mesh...")
@@ -66,20 +71,28 @@ class ModalSimulator:
         self.K.assemble()
         self.M.assemble()
     
-    # TODO: Investigate how to improve solver configuration    
-    def computeModalAnalysis(self):
-        self.modal_problem = SLEPc.EPS().create()
-        self.modal_problem.setDimensions(80)
+    def computeModalAnalysis(self, target_freq=80.0, n_modes=80, tol=1e-8):
+        sigma = (2 * np.pi * target_freq / self.c) ** 2
+
+        self.modal_problem = SLEPc.EPS().create(self.domain.comm)
+
+        self.modal_problem.setOperators(self.K, self.M)
         self.modal_problem.setProblemType(SLEPc.EPS.ProblemType.GHEP)
 
-        st = SLEPc.ST().create()
+        self.modal_problem.setType(SLEPc.EPS.Type.KRYLOVSCHUR)
+
+        self.modal_problem.setDimensions(n_modes, max(2 * n_modes, n_modes + 20))
+
+        self.modal_problem.setTolerances(tol, 1000)
+
+        self.modal_problem.setTarget(sigma)
+        self.modal_problem.setWhichEigenpairs(SLEPc.EPS.Which.TARGET_MAGNITUDE)
+
+        st = self.modal_problem.getST()
         st.setType(SLEPc.ST.Type.SINVERT)
-        st.setShift(0.839)
-        st.setFromOptions()
+        st.setShift(sigma)
 
-        self.modal_problem.setST(st)
-        self.modal_problem.setOperators(self.K, self.M)
-
+        self.modal_problem.setFromOptions()
         self.modal_problem.solve()
         
     def obtainModes(self):
