@@ -9,93 +9,194 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QLabel, QLineEdit,
     QPushButton, QGridLayout, QHBoxLayout, QVBoxLayout,
-    QSizePolicy, QGroupBox, QComboBox, QMessageBox
+    QSizePolicy, QGroupBox, QComboBox, QMessageBox,
+    QStackedWidget, QSpacerItem
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
 import dummy_functions as dumF
 
 
-class RoomModalOptimizer(QWidget):
+# ── Estado global del recinto ─────────────────────────────────────────────────
+class RoomState:
+    PARAM_KEYS = [
+        "Lx", "Ly", "Lz",
+        "left_y0", "left_y1", "right_y0", "right_y1",
+        "front_x0", "front_x1", "back_x0", "back_x1",
+        "left_angle", "right_angle", "front_angle", "back_angle",
+    ]
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    def __init__(self):
+        self.room   = {k: 0.0 for k in self.PARAM_KEYS}
+        self.source = {"src_x": 0.0, "src_y": 0.0, "src_z": 0.0}
+        self.mic    = {"mic_x": 0.0, "mic_y": 0.0, "mic_z": 0.0}
+        self.msh_path = ""
+
+    def reset(self):
+        self.__init__()
+
+
+# ── Ventana principal con QStackedWidget ──────────────────────────────────────
+class MainWindow(QWidget):
+
+    def __init__(self):
+        super().__init__()
         self.setWindowTitle("Room Modal Optimizer")
         self.resize(1400, 900)
-        self._init_vars()
 
+        self.state = RoomState()
+
+        self.stack = QStackedWidget(self)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self.stack)
+
+        self.welcome_page = WelcomePage(self)
+        self.main_page    = MainPage(self)
+
+        self.stack.addWidget(self.welcome_page)
+        self.stack.addWidget(self.main_page)
+        self.stack.setCurrentWidget(self.welcome_page)
+
+    def go_to_main(self):
+        self.main_page.load_state()
+        self.stack.setCurrentWidget(self.main_page)
+
+
+# ── Página de bienvenida ──────────────────────────────────────────────────────
+class WelcomePage(QWidget):
+
+    def __init__(self, window: MainWindow):
+        super().__init__(window)
+        self.window = window
+        self._build()
+
+    def _build(self):
+        lay = QVBoxLayout(self)
+        lay.setAlignment(Qt.AlignCenter)
+        lay.setSpacing(20)
+
+        # Título
+        title = QLabel("Welcome to\nRoom Modal Optimizer")
+        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont("Segoe UI", 28, QFont.Bold))
+        lay.addWidget(title)
+
+        lay.addSpacerItem(QSpacerItem(0, 30, QSizePolicy.Minimum, QSizePolicy.Fixed))
+
+        # Botones
+        btn_frame = QFrame()
+        btn_lay   = QHBoxLayout(btn_frame)
+        btn_lay.setSpacing(16)
+        btn_lay.setAlignment(Qt.AlignCenter)
+
+        for text, role, cb in [
+            ("Create Room", "success",   self._create_room),
+            ("Load Room",   "secondary", self._load_room),
+            ("Load SKP",    "secondary", self._load_skp),
+        ]:
+            btn = QPushButton(text)
+            btn.setProperty("role", role)
+            btn.setFixedSize(160, 48)
+            btn.clicked.connect(cb)
+            btn_lay.addWidget(btn)
+
+        lay.addWidget(btn_frame)
+
+    def _create_room(self):
+        self.window.state.reset()
+        self.window.go_to_main()
+
+    def _load_room(self):
+        # Dummy: en el futuro abrirá un file dialog para cargar room data
+        self.window.state.reset()
+        self.window.go_to_main()
+
+    def _load_skp(self):
+        # Dummy: en el futuro abrirá un file dialog para cargar .skp
+        self.window.state.reset()
+        self.window.go_to_main()
+
+
+# ── Página principal ──────────────────────────────────────────────────────────
+class MainPage(QWidget):
+
+    def __init__(self, window: MainWindow):
+        super().__init__(window)
+        self.window = window
+        self._build()
+
+    @property
+    def state(self) -> RoomState:
+        return self.window.state
+
+    def _build(self):
         root = QHBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
-
         root.addWidget(self._build_left_panel(),  stretch=3)
         root.addWidget(self._build_right_panel(), stretch=1)
 
-    def _init_vars(self):
-        keys = [
-            "Lx", "Ly", "Lz",
-            "left_y0", "left_y1", "right_y0", "right_y1",
-            "front_x0", "front_x1", "back_x0", "back_x1",
-            "left_angle", "right_angle", "front_angle", "back_angle",
-        ]
-        self.room_params: dict[str, QLineEdit] = {}
-        self.source_params: dict[str, QLineEdit] = {}
-        self.mic_params: dict[str, QLineEdit] = {}
-        self.msh_path = ""
+    def load_state(self):
+        """Carga el RoomState en los widgets al entrar a la página."""
+        for k, w in self.room_entries.items():
+            w.setText(str(self.state.room.get(k, 0.0)))
+        for k, w in self.source_entries.items():
+            w.setText(str(self.state.source.get(k, 0.0)))
+        for k, w in self.mic_entries.items():
+            w.setText(str(self.state.mic.get(k, 0.0)))
 
-    # ── Panel izquierdo (mesh + plots) ────────────────────────────────────────
+    def _sync_state(self):
+        """Sincroniza los widgets al RoomState antes de calcular."""
+        for k, w in self.room_entries.items():
+            self.state.room[k] = float(w.text() or 0)
+        for k, w in self.source_entries.items():
+            self.state.source[k] = float(w.text() or 0)
+        for k, w in self.mic_entries.items():
+            self.state.mic[k] = float(w.text() or 0)
+
+    # ── Panel izquierdo ───────────────────────────────────────────────────────
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
         lay   = QVBoxLayout(panel)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-
-        lay.addWidget(self._build_mesh_view(),  stretch=3)
+        lay.addWidget(self._build_mesh_view(),                       stretch=3)
         lay.addWidget(self._build_placeholder("Modes Distribution"), stretch=1)
         lay.addWidget(self._build_placeholder("Modal Response"),     stretch=1)
-
         return panel
 
     def _build_mesh_view(self) -> QGroupBox:
-        box = QGroupBox(" Room Mesh View")
+        box   = QGroupBox(" Room Mesh View")
         outer = QVBoxLayout(box)
 
-        # Contenedor con posicionamiento absoluto para superponer el combo
         container = QWidget()
         container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         outer.addWidget(container)
 
-        bg = "#000000"
-        self.fig = plt.Figure(facecolor=bg)
+        self.fig = plt.Figure(facecolor="#000000")
         self.canvas = FigureCanvas(self.fig)
-        self.canvas.setStyleSheet(f"background-color: {bg};")
+        self.canvas.setStyleSheet("background-color: #000000;")
         self.canvas.setParent(container)
         self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # Combo flotante en esquina superior derecha
         self.view_combo = QComboBox(container)
-        for label, key in [("Isometric","iso"), ("Top","xy"), ("Front","xz"), ("Side","yz")]:
+        for label, key in [("Isometric","iso"),("Top","xy"),("Front","xz"),("Side","yz")]:
             self.view_combo.addItem(label, key)
         self.view_combo.setFixedWidth(110)
         self.view_combo.activated.connect(
             lambda: self._set_view(self.view_combo.currentData())
         )
 
-        # Layout para posicionar canvas y reubicar combo al resize
         canvas_lay = QVBoxLayout(container)
         canvas_lay.setContentsMargins(0, 0, 0, 0)
         canvas_lay.addWidget(self.canvas)
 
-        # Overlay de cálculo
         self.overlay = QLabel("Calculating...", container)
         self.overlay.setAlignment(Qt.AlignCenter)
         self.overlay.setStyleSheet("""
-            background-color: rgba(0, 0, 0, 160);
-            color: white;
-            font-size: 16pt;
-            font-weight: bold;
-            border-radius: 8px;
+            background-color: rgba(0,0,0,160);
+            color: white; font-size: 16pt; font-weight: bold; border-radius: 8px;
         """)
         self.overlay.hide()
 
@@ -103,7 +204,6 @@ class RoomModalOptimizer(QWidget):
             self.view_combo.move(container.width() - self.view_combo.width() - 8, 8),
             self.overlay.setGeometry(0, 0, container.width(), container.height())
         )
-
         return box
 
     def _build_placeholder(self, title: str) -> QGroupBox:
@@ -117,57 +217,60 @@ class RoomModalOptimizer(QWidget):
         lay.addWidget(lbl)
         return box
 
-    # ── Panel derecho (entries + botones) ─────────────────────────────────────
+    # ── Panel derecho ─────────────────────────────────────────────────────────
     def _build_right_panel(self) -> QWidget:
         panel = QWidget()
         lay   = QVBoxLayout(panel)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        lay.addWidget(self._create_input_group(
+        self.room_entries:   dict[str, QLineEdit] = {}
+        self.source_entries: dict[str, QLineEdit] = {}
+        self.mic_entries:    dict[str, QLineEdit] = {}
+
+        lay.addWidget(self._input_group(
             "Plant Lengths [m]:",
-            [("Lx","Lx:"), ("Ly","Ly:"), ("Lz","Lz:")],
-            cols=3
+            [("Lx","Lx:"),("Ly","Ly:"),("Lz","Lz:")],
+            cols=3, d=self.room_entries
         ))
-        lay.addWidget(self._create_input_group(
+        lay.addWidget(self._input_group(
             "Plant Offsets [m]:",
-            [("left_y0","L-Y0:"), ("left_y1","L-Y1:"),
-             ("right_y0","R-Y0:"), ("right_y1","R-Y1:"),
-             ("front_x0","F-X0:"), ("front_x1","F-X1:"),
-             ("back_x0","B-X0:"),  ("back_x1","B-X1:")],
-            cols=4, show_reset=True
+            [("left_y0","L-Y0:"),("left_y1","L-Y1:"),
+             ("right_y0","R-Y0:"),("right_y1","R-Y1:"),
+             ("front_x0","F-X0:"),("front_x1","F-X1:"),
+             ("back_x0","B-X0:"), ("back_x1","B-X1:")],
+            cols=4, show_reset=True, d=self.room_entries
         ))
-        lay.addWidget(self._create_input_group(
+        lay.addWidget(self._input_group(
             "Wall Inclination [deg]:",
-            [("left_angle","Left:"), ("right_angle","Right:"),
-             ("front_angle","Front:"), ("back_angle","Back:")],
-            cols=4, show_reset=True
+            [("left_angle","Left:"),("right_angle","Right:"),
+             ("front_angle","Front:"),("back_angle","Back:")],
+            cols=4, show_reset=True, d=self.room_entries
         ))
-        lay.addWidget(self._create_input_group(
+        lay.addWidget(self._input_group(
             "Source Position [m]:",
-            [("src_x","X:"), ("src_y","Y:"), ("src_z","Z:")],
-            cols=3, params_dict=self.source_params
+            [("src_x","X:"),("src_y","Y:"),("src_z","Z:")],
+            cols=3, d=self.source_entries
         ))
-        lay.addWidget(self._create_input_group(
+        lay.addWidget(self._input_group(
             "Microphone Position [m]:",
-            [("mic_x","X:"), ("mic_y","Y:"), ("mic_z","Z:")],
-            cols=3, params_dict=self.mic_params
+            [("mic_x","X:"),("mic_y","Y:"),("mic_z","Z:")],
+            cols=3, d=self.mic_entries
         ))
 
         lay.addStretch()
         lay.addWidget(self._build_action_buttons())
         return panel
 
-    # ── Helpers de UI ─────────────────────────────────────────────────────────
-    def _make_button(self, text, role, callback) -> QPushButton:
+    # ── Helpers UI ────────────────────────────────────────────────────────────
+    def _btn(self, text, role, cb) -> QPushButton:
         btn = QPushButton(text)
         btn.setProperty("role", role)
-        btn.clicked.connect(callback)
+        btn.clicked.connect(cb)
         return btn
 
-    def _create_input_group(self, title, items, cols=3, show_reset=False, params_dict=None) -> QFrame:
-        if params_dict is None:
-            params_dict = self.room_params
+    def _input_group(self, title, items, cols=3, show_reset=False, d=None) -> QFrame:
+        if d is None: d = self.room_entries
         frame = QFrame()
         outer = QVBoxLayout(frame)
         outer.setContentsMargins(0, 8, 0, 4)
@@ -175,12 +278,12 @@ class RoomModalOptimizer(QWidget):
 
         header = QHBoxLayout()
         lbl = QLabel(title)
-        lbl.setFont(QFont("Helvetica", 10, QFont.Bold))
+        lbl.setFont(QFont("Segoe UI", 10, QFont.Bold))
         header.addWidget(lbl)
         if show_reset:
             keys = [k for k, _ in items]
-            rst = self._make_button("reset to 0", "link", lambda _, ks=keys, d=params_dict: self._set_to_zero(ks, d))
-            header.addWidget(rst)
+            header.addWidget(self._btn("reset to 0", "link",
+                lambda _, ks=keys, dd=d: [dd[k].setText("0") for k in ks]))
         header.addStretch()
         outer.addLayout(header)
 
@@ -188,13 +291,13 @@ class RoomModalOptimizer(QWidget):
         grid.setSpacing(4)
         for i, (key, label) in enumerate(items):
             r, c = divmod(i, cols)
-            grid.addWidget(QLabel(label), r, c * 2, Qt.AlignLeft)
+            grid.addWidget(QLabel(label), r, c*2, Qt.AlignLeft)
             entry = QLineEdit()
             entry.setFixedWidth(60)
-            grid.addWidget(entry, r, c * 2 + 1, Qt.AlignLeft)
-            params_dict[key] = entry
+            grid.addWidget(entry, r, c*2+1, Qt.AlignLeft)
+            d[key] = entry
         for c in range(cols):
-            grid.setColumnStretch(c * 2 + 1, 1)
+            grid.setColumnStretch(c*2+1, 1)
         outer.addLayout(grid)
         return frame
 
@@ -203,7 +306,6 @@ class RoomModalOptimizer(QWidget):
         grid  = QGridLayout(frame)
         grid.setContentsMargins(0, 10, 0, 10)
         grid.setSpacing(6)
-
         specs = [
             ("Calculate",            "success",   self.execute_pipeline, 0, 0),
             ("Export Room Data",     "secondary",  self.export_rd,        0, 1),
@@ -211,7 +313,7 @@ class RoomModalOptimizer(QWidget):
             ("Clear",                "danger",     self.clear_entries,    1, 1),
         ]
         for text, role, cmd, r, c in specs:
-            btn = self._make_button(text, role, cmd)
+            btn = self._btn(text, role, cmd)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
             grid.addWidget(btn, r, c)
         grid.setColumnStretch(0, 1)
@@ -220,87 +322,62 @@ class RoomModalOptimizer(QWidget):
 
     # ── Renderizado ───────────────────────────────────────────────────────────
     def display_mesh_pyvista(self, msh_path: str, view: str = "iso") -> None:
-        if not msh_path:
-            return
+        if not msh_path: return
         try:
-            bg = "#000000"
             mesh    = pv.read(msh_path)
             surface = mesh.extract_surface(algorithm='dataset_surface')
-
             plotter = pv.Plotter(off_screen=True)
-            plotter.set_background(bg)
+            plotter.set_background("#000000")
             plotter.add_mesh(surface, color="silver", show_edges=False, opacity=0.3)
-
-            if   view == "xy":  plotter.view_xy()
-            elif view == "xz":  plotter.view_xz()
-            elif view == "yz":  plotter.view_yz()
-            else:               plotter.view_isometric()
-
+            if   view == "xy": plotter.view_xy()
+            elif view == "xz": plotter.view_xz()
+            elif view == "yz": plotter.view_yz()
+            else:              plotter.view_isometric()
             plotter.reset_camera()
             screenshot = plotter.screenshot()
             plotter.close()
-
             self.fig.clear()
-            self.fig.set_facecolor(bg)
+            self.fig.set_facecolor("#000000")
             ax = self.fig.add_subplot(111)
-            ax.set_facecolor(bg)
+            ax.set_facecolor("#000000")
             ax.imshow(screenshot)
             ax.axis("off")
             self.fig.tight_layout(pad=0)
             self.canvas.draw()
-
         except Exception as e:
             self._show_error(f"Error al renderizar el mesh:\n{e}")
 
     # ── Callbacks ─────────────────────────────────────────────────────────────
-    def _set_view(self, view: str) -> None:
-        if self.msh_path:
-            self.display_mesh_pyvista(self.msh_path, view)
+    def _set_view(self, view: str):
+        if self.state.msh_path:
+            self.display_mesh_pyvista(self.state.msh_path, view)
 
-    def _set_to_zero(self, keys, params_dict=None):
-        if params_dict is None:
-            params_dict = self.room_params
-        for k in keys:
-            params_dict[k].setText("0")
-
-    def _show_error(self, msg: str) -> None:
+    def _show_error(self, msg: str):
         dlg = QMessageBox(self)
         dlg.setIcon(QMessageBox.Critical)
         dlg.setWindowTitle("Error")
         dlg.setText(msg)
+        dlg.setStandardButtons(QMessageBox.Ok)
+        dlg.button(QMessageBox.Ok).setText("OK")
         dlg.setStyleSheet("""
-            QMessageBox {
-                background-color: #2b2b2b;
-            }
-            QMessageBox QLabel {
-                color: #ff6b6b;
-                font-size: 10pt;
-            }
+            QMessageBox { background-color: #2b2b2b; }
+            QMessageBox QLabel { color: #ff6b6b; font-size: 10pt; }
             QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
                     stop:0 #5a5a5a, stop:1 #3d3d3d);
-                color: #dddddd;
-                border-radius: 4px;
-                padding: 5px 15px;
-                font-weight: bold;
-                border: none;
+                color: #dddddd; border-radius: 4px;
+                padding: 5px 15px; font-weight: bold; border: none;
             }
             QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                background: qlineargradient(x1:0,y1:0,x2:0,y2:1,
                     stop:0 #6a6a6a, stop:1 #4d4d4d);
             }
         """)
-        dlg.setStandardButtons(QMessageBox.Ok)
-        dlg.button(QMessageBox.Ok).setText("OK")
         dlg.exec()
 
     def execute_pipeline(self):
         try:
-            data   = {k: float(w.text()) for k, w in self.room_params.items()}
-            source = {k: float(w.text()) for k, w in self.source_params.items()}
-            mic    = {k: float(w.text()) for k, w in self.mic_params.items()}
-            data["source_pos"] = (source["src_x"], source["src_y"], source["src_z"])
-            data["mic_pos"]    = (mic["mic_x"],    mic["mic_y"],    mic["mic_z"])
+            self._sync_state()
         except ValueError:
             self._show_error("Todos los campos deben ser numéricos.")
             return
@@ -308,13 +385,20 @@ class RoomModalOptimizer(QWidget):
         self.overlay.raise_()
         QApplication.processEvents()
         try:
+            data = dict(self.state.room)
+            data["source_pos"] = (self.state.source["src_x"],
+                                  self.state.source["src_y"],
+                                  self.state.source["src_z"])
+            data["mic_pos"]    = (self.state.mic["mic_x"],
+                                  self.state.mic["mic_y"],
+                                  self.state.mic["mic_z"])
             path = dumF.gui_get_mesh_path(data)
         except Exception as e:
             self.overlay.hide()
             self._show_error(f"Error al generar el mesh:\n{e}")
             return
         if path:
-            self.msh_path = path
+            self.state.msh_path = path
             self.display_mesh_pyvista(path)
         self.overlay.hide()
 
@@ -322,12 +406,11 @@ class RoomModalOptimizer(QWidget):
     def export_mr(self):  print("Exporting Modal Response...")
 
     def clear_entries(self):
-        for w in self.room_params.values():
+        for w in list(self.room_entries.values()) + \
+                 list(self.source_entries.values()) + \
+                 list(self.mic_entries.values()):
             w.clear()
-        for w in self.source_params.values():
-            w.clear()
-        for w in self.mic_params.values():
-            w.clear()
+        self.state.reset()
         self.fig.clear()
         self.canvas.draw()
 
@@ -337,6 +420,6 @@ if __name__ == "__main__":
     from styles import apply_theme
     app = QApplication(sys.argv)
     apply_theme(app)
-    win = RoomModalOptimizer()
+    win = MainWindow()
     win.show()
     sys.exit(app.exec())
