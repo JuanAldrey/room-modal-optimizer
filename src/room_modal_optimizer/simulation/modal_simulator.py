@@ -25,6 +25,7 @@ class ModalSimulator:
         self.modal_problem = None
         self.eig_vector = []
         self.eig_freq = []
+        self.n_modes = None
 
         # Physical constants
         self.rho0 = 1.225
@@ -47,7 +48,7 @@ class ModalSimulator:
         if export:
             self.exportModes()
 
-        return self.eig_freq, self.eig_vector
+        return self.eig_freq, self.eig_vector, self.n_modes
 
         
     def loadMesh(self, mesh_path):
@@ -72,6 +73,7 @@ class ModalSimulator:
         self.M.assemble()
     
     def computeModalAnalysis(self, target_freq=80.0, n_modes=80, tol=1e-8):
+        self.n_modes = n_modes
         sigma = (2 * np.pi * target_freq / self.c) ** 2
 
         self.modal_problem = SLEPc.EPS().create(self.domain.comm)
