@@ -1,8 +1,9 @@
-class Evaluator:
-    def evaluate(self, simulation_result):
-        ...
+import numpy as np
 
-    def fsi(f_modes, n):
+class Evaluator:
+    
+    @staticmethod
+    def evaluate(f_modes, n):
         """
         Frequency Spacing Index
         Inputs:
