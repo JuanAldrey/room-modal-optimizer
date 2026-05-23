@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QLabel, QLineEdit,
     QPushButton, QGridLayout, QHBoxLayout, QVBoxLayout,
     QSizePolicy, QGroupBox, QComboBox, QMessageBox,
-    QStackedWidget, QSpacerItem
+    QStackedWidget, QSpacerItem, QTabWidget
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,24 +19,18 @@ import dummy_functions as dumF
 
 # ── Estado global del recinto ─────────────────────────────────────────────────
 class RoomState:
-    PARAM_KEYS = [
-        "Lx", "Ly", "Lz",
-        "left_y0", "left_y1", "right_y0", "right_y1",
-        "front_x0", "front_x1", "back_x0", "back_x1",
-        "left_angle", "right_angle", "front_angle", "back_angle",
-    ]
-
     def __init__(self):
-        self.room   = {k: 0.0 for k in self.PARAM_KEYS}
-        self.source = {"src_x": 0.0, "src_y": 0.0, "src_z": 0.0}
-        self.mic    = {"mic_x": 0.0, "mic_y": 0.0, "mic_z": 0.0}
-        self.msh_path = ""
+        # {"V1":(x,y), ..., "Vn":(x,y), "W1":ang, ..., "Wn":ang, "Z":h}
+        self.room_geometry: dict = {}
+        self.source_pos: tuple = (0.0, 0.0, 0.0)
+        self.mic_pos:    tuple = (0.0, 0.0, 0.0)
+        self.msh_path:   str   = ""
 
     def reset(self):
         self.__init__()
 
 
-# ── Ventana principal con QStackedWidget ──────────────────────────────────────
+# ── Ventana principal ─────────────────────────────────────────────────────────
 class MainWindow(QWidget):
 
     def __init__(self):
@@ -61,6 +55,15 @@ class MainWindow(QWidget):
     def go_to_main(self):
         self.main_page.load_state()
         self.stack.setCurrentWidget(self.main_page)
+        design_tab = self.main_page.tabs.widget(0)
+        if hasattr(design_tab, "refresh_from_state"):
+            design_tab.refresh_from_state()
+        opt_tab = self.main_page.tabs.widget(1)
+        if hasattr(opt_tab, "_load_from_design"):
+            opt_tab._load_from_design()
+
+    def go_to_tab(self, index: int):
+        self.main_page.tabs.setCurrentIndex(index)
 
 
 # ── Página de bienvenida ──────────────────────────────────────────────────────
@@ -76,7 +79,6 @@ class WelcomePage(QWidget):
         lay.setAlignment(Qt.AlignCenter)
         lay.setSpacing(20)
 
-        # Título
         title = QLabel("Welcome to\nRoom Modal Optimizer")
         title.setAlignment(Qt.AlignCenter)
         title.setFont(QFont("Segoe UI", 28, QFont.Bold))
@@ -84,7 +86,6 @@ class WelcomePage(QWidget):
 
         lay.addSpacerItem(QSpacerItem(0, 30, QSizePolicy.Minimum, QSizePolicy.Fixed))
 
-        # Botones
         btn_frame = QFrame()
         btn_lay   = QHBoxLayout(btn_frame)
         btn_lay.setSpacing(16)
@@ -106,14 +107,33 @@ class WelcomePage(QWidget):
     def _create_room(self):
         self.window.state.reset()
         self.window.go_to_main()
+        self.window.go_to_tab(0)  # Room Design
 
     def _load_room(self):
-        # Dummy: en el futuro abrirá un file dialog para cargar room data
-        self.window.state.reset()
-        self.window.go_to_main()
+        from PySide6.QtWidgets import QFileDialog, QMessageBox
+        import json
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Room Data", "", "JSON Files (*.json)"
+        )
+        if not path:
+            return
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+            geom = data.get("data", data)
+            self.window.state.room_geometry = {
+                k: tuple(v) if isinstance(v, list) else v
+                for k, v in geom.items()
+            }
+            self.window.go_to_main()
+            # Refrescar Room Design con los nuevos datos
+            design_tab = self.window.main_page.tabs.widget(0)
+            if hasattr(design_tab, "refresh_from_state"):
+                design_tab.refresh_from_state()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo cargar el archivo:\n{e}")
 
     def _load_skp(self):
-        # Dummy: en el futuro abrirá un file dialog para cargar .skp
         self.window.state.reset()
         self.window.go_to_main()
 
@@ -131,29 +151,59 @@ class MainPage(QWidget):
         return self.window.state
 
     def _build(self):
-        root = QHBoxLayout(self)
+        root = QVBoxLayout(self)
         root.setContentsMargins(10, 10, 10, 10)
         root.setSpacing(10)
-        root.addWidget(self._build_left_panel(),  stretch=3)
-        root.addWidget(self._build_right_panel(), stretch=1)
+
+        # Inicializar dicts antes de construir paneles
+        self.source_entries: dict[str, QLineEdit] = {}
+        self.mic_entries:    dict[str, QLineEdit] = {}
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(self._build_room_design_tab(),           "Room Design")
+        self.tabs.addTab(self._build_room_optimization_tab(),     "Room Optimization")
+        self.tabs.addTab(self._build_transfer_simulation_tab(),   "Transfer Simulation")
+        root.addWidget(self.tabs)
 
     def load_state(self):
-        """Carga el RoomState en los widgets al entrar a la página."""
-        for k, w in self.room_entries.items():
-            w.setText(str(self.state.room.get(k, 0.0)))
+        src = self.state.source_pos
+        mic = self.state.mic_pos
         for k, w in self.source_entries.items():
-            w.setText(str(self.state.source.get(k, 0.0)))
+            w.setText(str(src[["src_x","src_y","src_z"].index(k)]))
         for k, w in self.mic_entries.items():
-            w.setText(str(self.state.mic.get(k, 0.0)))
+            w.setText(str(mic[["mic_x","mic_y","mic_z"].index(k)]))
 
     def _sync_state(self):
-        """Sincroniza los widgets al RoomState antes de calcular."""
-        for k, w in self.room_entries.items():
-            self.state.room[k] = float(w.text() or 0)
-        for k, w in self.source_entries.items():
-            self.state.source[k] = float(w.text() or 0)
-        for k, w in self.mic_entries.items():
-            self.state.mic[k] = float(w.text() or 0)
+        src = self.source_entries
+        mic = self.mic_entries
+        self.state.source_pos = (
+            float(src["src_x"].text() or 0),
+            float(src["src_y"].text() or 0),
+            float(src["src_z"].text() or 0),
+        )
+        self.state.mic_pos = (
+            float(mic["mic_x"].text() or 0),
+            float(mic["mic_y"].text() or 0),
+            float(mic["mic_z"].text() or 0),
+        )
+
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    def _build_room_design_tab(self) -> QWidget:
+        from room_design import RoomDesignTab
+        return RoomDesignTab(self.state)
+
+    def _build_room_optimization_tab(self) -> QWidget:
+        from room_optimization import RoomOptimizationTab
+        return RoomOptimizationTab(self.state)
+
+    def _build_transfer_simulation_tab(self) -> QWidget:
+        tab = QWidget()
+        lbl = QLabel("[ Transfer Simulation ]")
+        lbl.setAlignment(Qt.AlignCenter)
+        lbl.setStyleSheet("color: #555555; font-size: 14pt;")
+        lay = QVBoxLayout(tab)
+        lay.addWidget(lbl)
+        return tab
 
     # ── Panel izquierdo ───────────────────────────────────────────────────────
     def _build_left_panel(self) -> QWidget:
@@ -224,29 +274,6 @@ class MainPage(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
 
-        self.room_entries:   dict[str, QLineEdit] = {}
-        self.source_entries: dict[str, QLineEdit] = {}
-        self.mic_entries:    dict[str, QLineEdit] = {}
-
-        lay.addWidget(self._input_group(
-            "Plant Lengths [m]:",
-            [("Lx","Lx:"),("Ly","Ly:"),("Lz","Lz:")],
-            cols=3, d=self.room_entries
-        ))
-        lay.addWidget(self._input_group(
-            "Plant Offsets [m]:",
-            [("left_y0","L-Y0:"),("left_y1","L-Y1:"),
-             ("right_y0","R-Y0:"),("right_y1","R-Y1:"),
-             ("front_x0","F-X0:"),("front_x1","F-X1:"),
-             ("back_x0","B-X0:"), ("back_x1","B-X1:")],
-            cols=4, show_reset=True, d=self.room_entries
-        ))
-        lay.addWidget(self._input_group(
-            "Wall Inclination [deg]:",
-            [("left_angle","Left:"),("right_angle","Right:"),
-             ("front_angle","Front:"),("back_angle","Back:")],
-            cols=4, show_reset=True, d=self.room_entries
-        ))
         lay.addWidget(self._input_group(
             "Source Position [m]:",
             [("src_x","X:"),("src_y","Y:"),("src_z","Z:")],
@@ -385,13 +412,9 @@ class MainPage(QWidget):
         self.overlay.raise_()
         QApplication.processEvents()
         try:
-            data = dict(self.state.room)
-            data["source_pos"] = (self.state.source["src_x"],
-                                  self.state.source["src_y"],
-                                  self.state.source["src_z"])
-            data["mic_pos"]    = (self.state.mic["mic_x"],
-                                  self.state.mic["mic_y"],
-                                  self.state.mic["mic_z"])
+            data = dict(self.state.room_geometry)
+            data["source_pos"] = self.state.source_pos
+            data["mic_pos"]    = self.state.mic_pos
             path = dumF.gui_get_mesh_path(data)
         except Exception as e:
             self.overlay.hide()
@@ -406,8 +429,7 @@ class MainPage(QWidget):
     def export_mr(self):  print("Exporting Modal Response...")
 
     def clear_entries(self):
-        for w in list(self.room_entries.values()) + \
-                 list(self.source_entries.values()) + \
+        for w in list(self.source_entries.values()) + \
                  list(self.mic_entries.values()):
             w.clear()
         self.state.reset()

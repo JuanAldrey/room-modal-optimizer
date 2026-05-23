@@ -12,3 +12,10 @@ def gui_modal_dist(mesh_path):
     modalSimulator = ModalSimulator()
     modalSimulator.simulate(mesh_path, export=True)
     #falta obtener los modos
+
+
+def modal_sim(params):
+    mesher = Mesher()
+    mesh_path = mesher.create(params, room_name="standard", visualize=False, source_pos=(2.5, 2.5, 1.5))
+    modalSimulator = ModalSimulator()
+    freqs, _ = modalSimulator.simulate(mesh_path, export=True)
