@@ -317,12 +317,8 @@ class RoomOptimizationTab(QWidget):
             return
         try:
             with open(path, 'r') as f:
-                data = json.load(f)
-            geom = data.get("data", data)
-            self.state.room_geometry = {
-                k: tuple(v) if isinstance(v, list) else v
-                for k, v in geom.items()
-            }
+                raw = json.load(f)
+            self.state.room_geometry = raw.get("data", raw)
             self._load_from_design()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not load file:\n{e}")
@@ -333,11 +329,14 @@ class RoomOptimizationTab(QWidget):
             QMessageBox.warning(self, "Warning", "No room data found.")
             return
 
-        verts  = [(v[0], v[1]) for k, v in geom.items()
-                  if k.startswith("V") and isinstance(v, tuple)]
-        n      = len(verts)
-        walls  = [{"id": f"W{i+1}", "tilt_deg": geom.get(f"W{i+1}", 0.0)} for i in range(n)]
-        height = geom.get("Z", 3.0)
+        verts_data = geom.get("vertices", {})
+        walls_data = geom.get("walls", {})
+        height     = geom.get("Z", 3.0)
+
+        verts = [(v[0], v[1]) for v in verts_data.values()]
+        n     = len(verts)
+        walls = [{"id": f"W{i+1}", "tilt_deg": walls_data.get(f"W{i+1}", 0.0)}
+                 for i in range(n)]
 
         self.vertex_ranges = [{"xmin":0.0,"xmax":0.0,"ymin":0.0,"ymax":0.0} for _ in verts]
         self.wall_ranges   = [{"tmin":0.0,"tmax":0.0} for _ in walls]

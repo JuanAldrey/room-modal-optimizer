@@ -59,7 +59,7 @@ class MainWindow(QWidget):
         if hasattr(design_tab, "refresh_from_state"):
             design_tab.refresh_from_state()
         opt_tab = self.main_page.tabs.widget(1)
-        if hasattr(opt_tab, "_load_from_design"):
+        if hasattr(opt_tab, "_load_from_design") and self.state.room_geometry:
             opt_tab._load_from_design()
 
     def go_to_tab(self, index: int):
@@ -119,14 +119,11 @@ class WelcomePage(QWidget):
             return
         try:
             with open(path, 'r') as f:
-                data = json.load(f)
-            geom = data.get("data", data)
-            self.window.state.room_geometry = {
-                k: tuple(v) if isinstance(v, list) else v
-                for k, v in geom.items()
-            }
+                raw = json.load(f)
+            geom = raw.get("data", raw)
+            # Convertir listas a listas (ya es el formato correcto)
+            self.window.state.room_geometry = geom
             self.window.go_to_main()
-            # Refrescar Room Design con los nuevos datos
             design_tab = self.window.main_page.tabs.widget(0)
             if hasattr(design_tab, "refresh_from_state"):
                 design_tab.refresh_from_state()

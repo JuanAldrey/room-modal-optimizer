@@ -147,17 +147,16 @@ def build_geometry_dict(
     original_verts: list[tuple[float, float]] | None = None
 ) -> dict:
     """
-    Construye el dict de geometría en el formato:
-        {"V1": (x,y), ..., "Vn": (x,y), "W1": ang, ..., "Wn": ang, "Z": h}
-
-    Usa original_verts (orden del usuario) si se provee, para evitar que
-    ensure_ccw invierta el orden y desalinee vértices con paredes.
+    Formato:
+    {
+      "vertices": {"V1": [x, y], ...},
+      "walls":    {"W1": ang, ...},
+      "Z":        h
+    }
     """
     verts_to_save = original_verts if original_verts is not None else floor_verts
-    geom = {}
-    for i, (x, y) in enumerate(verts_to_save):
-        geom[f"V{i+1}"] = (float(x), float(y))
-    for i, wall in enumerate(wall_props):
-        geom[f"W{i+1}"] = float(wall["tilt_deg"])
-    geom["Z"] = float(height)
-    return geom
+    return {
+        "vertices": {f"V{i+1}": [float(x), float(y)] for i, (x, y) in enumerate(verts_to_save)},
+        "walls":    {f"W{i+1}": float(w["tilt_deg"]) for i, w in enumerate(wall_props)},
+        "Z":        float(height)
+    }
