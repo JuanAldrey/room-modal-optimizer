@@ -19,7 +19,7 @@ class Mesher:
         self.ceiling_pts = None
     
     def create(self, params, lc=0.25, room_name='room', visualize=False, source_pos=None):
-        self.params = params
+        self.params = params['data']
         self.lc = lc
         self.room_name = room_name
         self.source_pos = source_pos
@@ -48,86 +48,106 @@ class Mesher:
         return mesh_path
         
     def setFloorPoints(self):
-        Lx = self.params["Lx"]
-        Ly = self.params["Ly"]
+        vertices = self.params["vertices"]
+        walls = self.params["walls"]
 
-        # puntos base con offsets
-        p_FL = (0 + self.params["front_x0"], 0 + self.params["left_y0"])
-        p_FR = (Lx + self.params["front_x1"], 0 + self.params["right_y0"])
-        p_BR = (Lx + self.params["back_x1"], Ly + self.params["right_y1"])
-        p_BL = (0 + self.params["back_x0"], Ly + self.params["left_y1"])
-        
-        self.floor_pts = p_FL, p_FR, p_BR, p_BL
+        self.floor_pts = [
+            tuple(vertices[key])
+            for key in sorted(vertices.keys(), key=lambda k: int(k[1:]))
+        ]
+
+        self.wall_angles = [
+            walls[key]
+            for key in sorted(walls.keys(), key=lambda k: int(k[1:]))
+        ]
+
+        self.ensureCounterClockwise()
 
     def setCeilingPoints(self):
-        Lz = self.params["Lz"]
+        Lz = self.params["Z"]
 
-        a_left  = math.radians(self.params["left_angle"])
-        a_right = math.radians(self.params["right_angle"])
-        a_front = math.radians(self.params["front_angle"])
-        a_back  = math.radians(self.params["back_angle"])
+        shifted_walls = []
+        n_walls = len(self.floor_pts)
+        
+        for i in range(n_walls):
+            floor_pt1 = self.floor_pts[i]
+            floor_pt2 = self.floor_pts[(i + 1) % n_walls]
+            
+            vec_x = floor_pt2[0] - floor_pt1[0]
+            vec_y = floor_pt2[1] - floor_pt1[1]
+            
+            length = math.sqrt(vec_x**2 + vec_y**2)
+            
+            nx = vec_y / length
+            ny = -vec_x / length
+            
+            d = Lz * math.tan(math.radians(self.wall_angles[i]))
+            
+            ceiling_pt1 = (floor_pt1[0] + d * nx, floor_pt1[1] + d * ny)
+            ceiling_pt2 = (floor_pt2[0] + d * nx, floor_pt2[1] + d * ny)
+            
+            shifted_walls.append((ceiling_pt1, ceiling_pt2))
+            
+        ceiling_pts = []
 
-        dx_left  = Lz * math.tan(a_left)
-        dx_right = Lz * math.tan(a_right)
-        dy_front = Lz * math.tan(a_front)
-        dy_back  = Lz * math.tan(a_back)
+        for i in range(n_walls):
+            previous_wall = shifted_walls[i - 1]
+            current_wall = shifted_walls[i]
 
-        p_FL, p_FR, p_BR, p_BL = self.floor_pts
+            ceiling_pt = self.lineIntersection(
+                previous_wall[0],
+                previous_wall[1],
+                current_wall[0],
+                current_wall[1]
+            )
 
-        t_FL = (p_FL[0] - dx_left,  p_FL[1] - dy_front)
-        t_FR = (p_FR[0] + dx_right, p_FR[1] - dy_front)
-        t_BR = (p_BR[0] + dx_right, p_BR[1] + dy_back)
-        t_BL = (p_BL[0] - dx_left,  p_BL[1] + dy_back)
+            ceiling_pts.append(ceiling_pt)
 
-        self.ceiling_pts = t_FL, t_FR, t_BR, t_BL
+        self.ceiling_pts = ceiling_pts
 
     def buildGeometry(self):
-        p_FL, p_FR, p_BR, p_BL = self.floor_pts
-        t_FL, t_FR, t_BR, t_BL = self.ceiling_pts
         lc = self.lc
         
         factory = gmsh.model.occ
         
         # Floor
-        p1 = factory.addPoint(*p_FL, 0, lc)
-        p2 = factory.addPoint(*p_FR, 0, lc)
-        p3 = factory.addPoint(*p_BR, 0, lc)
-        p4 = factory.addPoint(*p_BL, 0, lc)
-
-        l1 = factory.addLine(p1, p2)
-        l2 = factory.addLine(p2, p3)
-        l3 = factory.addLine(p3, p4)
-        l4 = factory.addLine(p4, p1)
+        floor_pts = [factory.addPoint(*point, 0, lc) for point in self.floor_pts]
+        floor_lines = [
+            factory.addLine(floor_pts[i], floor_pts[(i + 1) % len(floor_pts)])
+            for i in range(len(floor_pts))
+        ]
         
-        cl_floor = factory.addCurveLoop([l1, l2, l3, l4])
+        cl_floor = factory.addCurveLoop(floor_lines)
         floor = factory.addPlaneSurface([cl_floor])
         
         # Ceiling
-        p5 = factory.addPoint(*t_FL, self.params["Lz"], lc)
-        p6 = factory.addPoint(*t_FR, self.params["Lz"], lc)
-        p7 = factory.addPoint(*t_BR, self.params["Lz"], lc)
-        p8 = factory.addPoint(*t_BL, self.params["Lz"], lc)
-
-        l5 = factory.addLine(p5, p6)
-        l6 = factory.addLine(p6, p7)
-        l7 = factory.addLine(p7, p8)
-        l8 = factory.addLine(p8, p5)
-
-        cl_ceiling = factory.addCurveLoop([l5, l6, l7, l8])
+        ceiling_pts = [factory.addPoint(*point, self.params["Z"], lc) for point in self.ceiling_pts]
+        ceiling_lines = [
+            factory.addLine(ceiling_pts[i], ceiling_pts[(i + 1) % len(ceiling_pts)])
+            for i in range(len(ceiling_pts))
+        ]
+        
+        cl_ceiling = factory.addCurveLoop(ceiling_lines)
         ceiling = factory.addPlaneSurface([cl_ceiling])
         
         # Walls
-        l9  = factory.addLine(p1, p5)
-        l10 = factory.addLine(p2, p6)
-        l11 = factory.addLine(p3, p7)
-        l12 = factory.addLine(p4, p8)
+        vertical_lines = [
+            factory.addLine(floor_pts[i], ceiling_pts[i])
+            for i in range(len(floor_pts))
+        ]
         
-        w1 = factory.addSurfaceFilling(factory.addCurveLoop([ l1,  l10, -l5, -l9 ]))
-        w2 = factory.addSurfaceFilling(factory.addCurveLoop([ l2,  l11, -l6, -l10]))
-        w3 = factory.addSurfaceFilling(factory.addCurveLoop([ l3,  l12, -l7, -l11]))
-        w4 = factory.addSurfaceFilling(factory.addCurveLoop([ l4,   l9, -l8, -l12]))
+        walls = []
         
-        walls = [w1, w2, w3, w4]
+        for i in range(len(floor_pts)):
+            wall_loop = factory.addCurveLoop([
+                floor_lines[i],
+                vertical_lines[(i + 1) % len(floor_pts)],
+                -ceiling_lines[i],
+                -vertical_lines[i]
+            ])
+
+            wall = factory.addSurfaceFilling(wall_loop)
+            walls.append(wall)
 
         # Volume
         sl = factory.addSurfaceLoop([floor, ceiling] + walls)
@@ -158,7 +178,7 @@ class Mesher:
     
     def setTagsWithCenterOfMass(self):
         source_x, source_y, source_z = self.source_pos
-        Lz = self.params["Lz"]
+        Lz = self.params["Z"]
 
         for dim, tag in gmsh.model.getEntities(2):
             cx, cy, cz = gmsh.model.occ.getCenterOfMass(dim, tag)
@@ -201,3 +221,39 @@ class Mesher:
         gmsh.write(str(output))
 
         return output
+    
+    def lineIntersection(self, p1, p2, p3, p4):
+        x1, y1 = p1
+        x2, y2 = p2
+        x3, y3 = p3
+        x4, y4 = p4
+
+        den = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
+
+        px = (
+            (x1 * y2 - y1 * x2) * (x3 - x4)
+            - (x1 - x2) * (x3 * y4 - y3 * x4)
+        ) / den
+
+        py = (
+            (x1 * y2 - y1 * x2) * (y3 - y4)
+            - (y1 - y2) * (x3 * y4 - y3 * x4)
+        ) / den
+
+        return (px, py)
+        
+    def ensureCounterClockwise(self):
+        if self.polygonSignedArea(self.floor_pts) < 0:
+            self.floor_pts = [self.floor_pts[0]] + list(reversed(self.floor_pts[1:]))
+            self.wall_angles = self.wall_angles[::-1]
+            
+    def polygonSignedArea(self, points):
+        area = 0.0
+        n = len(points)
+
+        for i in range(n):
+            x1, y1 = points[i]
+            x2, y2 = points[(i + 1) % n]
+            area += x1 * y2 - x2 * y1
+
+        return area / 2.0

@@ -1,87 +1,155 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 
 rectangular_params = {
-    "Lx": 4, "Ly": 3, "Lz": 3,
-
-    "left_y0": 0, "left_y1": 0,
-    "right_y0": 0, "right_y1": 0,
-    "front_x0": 0, "front_x1": 0,
-    "back_x0": 0, "back_x1": 0,
-
-    "left_angle": 0,
-    "right_angle": 0,
-    "front_angle": 0,
-    "back_angle": 0,
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [4.0, 0.0],
+            "V3": [4.0, 3.0],
+            "V4": [0.0, 3.0]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0
+        },
+        "Z": 3.0
+    }
 }
 
-standard_params = {
-    # Plant lengths
-    "Lx": 4,
-    "Ly": 3,
-    "Lz": 3,
-
-    # Plant offsets
-    "left_y0": 0.3,
-    "left_y1": 0.2,
-    "right_y0": 0.0,
-    "right_y1": -0.1,
-    "front_x0": 0.3,
-    "front_x1": 0.1,
-    "back_x0": 0.2,
-    "back_x1": -0.1,
-
-    # Wall inclination (degrees)
-    "left_angle": 10,
-    "right_angle": -10,
-    "front_angle": 5,
-    "back_angle": -10
+one_angle_params = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [4.0, 0.0],
+            "V3": [4.0, 3.0],
+            "V4": [0.0, 3.0]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 5.0,
+            "W4": 0.0
+        },
+        "Z": 3.0
+    }
 }
 
-offset_params = {
-    "Lx": 4, "Ly": 3, "Lz": 3,
-
-    "left_y0": 0.5, "left_y1": -0.3,
-    "right_y0": -0.4, "right_y1": 0.4,
-    "front_x0": 0.4, "front_x1": -0.3,
-    "back_x0": -0.2, "back_x1": 0.5,
-
-    "left_angle": 0,
-    "right_angle": 0,
-    "front_angle": 0,
-    "back_angle": 0,
+irregular_params = {
+    "data": {
+        "vertices": {
+            "V1": [1.182, -0.026],
+            "V2": [0.804, 0.869],
+            "V3": [-0.07, 0.68],
+            "V4": [0.015, -0.003]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 3.0,
+            "W4": 0.0
+        },
+        "Z": 3.0
+    }
 }
 
-angle_params = {
-    "Lx": 4, "Ly": 3, "Lz": 3,
-
-    "left_y0": 0, "left_y1": 0,
-    "right_y0": 0, "right_y1": 0,
-    "front_x0": 0, "front_x1": 0,
-    "back_x0": 0, "back_x1": 0,
-
-    "left_angle": 12,
-    "right_angle": -8,
-    "front_angle": 7,
-    "back_angle": -10,
+params_5_walls = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [4.0, 0.0],
+            "V3": [4.5, 1.5],
+            "V4": [2.5, 3.0],
+            "V5": [0.0, 2.5]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 5.0,
+            "W3": 0.0,
+            "W4": -3.0,
+            "W5": 0.0
+        },
+        "Z": 3.0
+    }
 }
 
-aggresive_params = {
-    "Lx": 4, "Ly": 3, "Lz": 3,
+params_8_walls = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [2.0, -0.2],
+            "V3": [4.0, 0.3],
+            "V4": [4.7, 1.6],
+            "V5": [4.0, 3.0],
+            "V6": [2.4, 3.5],
+            "V7": [0.7, 3.0],
+            "V8": [-0.4, 1.4]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 3.0,
+            "W3": -4.0,
+            "W4": 5.0,
+            "W5": 0.0,
+            "W6": -3.0,
+            "W7": 2.0,
+            "W8": 0.0
+        },
+        "Z": 3.0
+    }
+}
 
-    "left_y0": 0.6, "left_y1": -0.4,
-    "right_y0": -0.5, "right_y1": 0.5,
-    "front_x0": 0.5, "front_x1": -0.4,
-    "back_x0": -0.3, "back_x1": 0.6,
+params_8_walls_no_angles = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [2.0, -0.2],
+            "V3": [4.0, 0.3],
+            "V4": [4.7, 1.6],
+            "V5": [4.0, 3.0],
+            "V6": [2.4, 3.5],
+            "V7": [0.7, 3.0],
+            "V8": [-0.4, 1.4]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0,
+            "W5": 0.0,
+            "W6": 0.0,
+            "W7": 0.0,
+            "W8": 0.0
+        },
+        "Z": 3.0
+    }
+}
 
-    "left_angle": 15,
-    "right_angle": -15,
-    "front_angle": 12,
-    "back_angle": -12,
+params_clockwise = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [0.0, 3.0],
+            "V3": [4.0, 3.0],
+            "V4": [4.0, 0.0]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 5.0,
+            "W3": 0.0,
+            "W4": -5.0
+        },
+        "Z": 3.0
+    }
 }
 
 mesher = Mesher()
-mesher.create(rectangular_params, room_name="rectangular", visualize=True)
-mesher.create(standard_params, room_name="standard", visualize=True)
-mesher.create(offset_params, room_name="offset", visualize=True)
-mesher.create(angle_params, room_name="angle", visualize=True)
-mesher.create(aggresive_params, room_name="aggressive", visualize=True)
+#mesher.create(rectangular_params, room_name="rectangular", visualize=True)
+#mesher.create(one_angle_params, room_name="standard", visualize=True)
+#mesher.create(irregular_params, room_name="offset", visualize=True)
+#mesher.create(params_5_walls, room_name="angle", visualize=True)
+#mesher.create(params_8_walls, room_name="aggressive", visualize=True)
+#mesher.create(params_8_walls_no_angles, room_name="aggressive", visualize=True)
+mesher.create(params_clockwise, room_name="aggressive", visualize=True)
+
