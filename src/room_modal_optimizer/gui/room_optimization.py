@@ -1,7 +1,7 @@
 import json
 import numpy as np
 
-from geometry import nearest_wall
+from geometry import nearest_wall, signed_area
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.patches import Polygon as MplPolygon
@@ -14,14 +14,15 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView,
     QSizePolicy, QFrame, QDialog, QFormLayout,
     QDialogButtonBox, QFileDialog, QMessageBox,
-    QCheckBox, QScrollArea, QAbstractItemView
+    QCheckBox, QAbstractItemView, QStackedWidget,
+    QComboBox
 )
 
 
 # ── Dialogs de rangos ─────────────────────────────────────────────────────────
 
 class VertexRangeDialog(QDialog):
-    def __init__(self, idx: int, ranges: dict, parent=None):
+    def __init__(self, idx, ranges, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"V{idx+1} — Range")
         self.setMinimumWidth(260)
@@ -36,19 +37,16 @@ class VertexRangeDialog(QDialog):
         form.addRow("Y min [m]:", self.ymin)
         form.addRow("Y max [m]:", self.ymax)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
         form.addRow(btns)
 
-    def get_ranges(self) -> dict:
-        return {
-            "xmin": float(self.xmin.text()), "xmax": float(self.xmax.text()),
-            "ymin": float(self.ymin.text()), "ymax": float(self.ymax.text()),
-        }
+    def get_ranges(self):
+        return {"xmin": float(self.xmin.text()), "xmax": float(self.xmax.text()),
+                "ymin": float(self.ymin.text()), "ymax": float(self.ymax.text())}
 
 
 class WallRangeDialog(QDialog):
-    def __init__(self, idx: int, ranges: dict, parent=None):
+    def __init__(self, idx, ranges, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"W{idx+1} — Tilt Range")
         self.setMinimumWidth(260)
@@ -59,18 +57,16 @@ class WallRangeDialog(QDialog):
         form.addRow("Tilt min [deg]:", self.tmin)
         form.addRow("Tilt max [deg]:", self.tmax)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
         form.addRow(btns)
 
-    def get_ranges(self) -> dict:
-        tmin, tmax = float(self.tmin.text()), float(self.tmax.text())
-        if tmin > tmax: tmin, tmax = tmax, tmin
-        return {"tmin": tmin, "tmax": tmax}
+    def get_ranges(self):
+        t1, t2 = float(self.tmin.text()), float(self.tmax.text())
+        return {"tmin": min(t1,t2), "tmax": max(t1,t2)}
 
 
 class HeightRangeDialog(QDialog):
-    def __init__(self, ranges: dict, parent=None):
+    def __init__(self, ranges, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Z — Height Range")
         self.setMinimumWidth(260)
@@ -81,11 +77,10 @@ class HeightRangeDialog(QDialog):
         form.addRow("Z min [m]:", self.zmin)
         form.addRow("Z max [m]:", self.zmax)
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.accepted.connect(self.accept)
-        btns.rejected.connect(self.reject)
+        btns.accepted.connect(self.accept); btns.rejected.connect(self.reject)
         form.addRow(btns)
 
-    def get_ranges(self) -> dict:
+    def get_ranges(self):
         return {"zmin": float(self.zmin.text()), "zmax": float(self.zmax.text())}
 
 
@@ -95,14 +90,14 @@ class OptCanvas(FigureCanvas):
     itemSelected = Signal(str, int)
 
     def __init__(self, parent=None):
-        self.fig = Figure(facecolor="#1e1e1e")
-        super().__init__(self.fig)
+        fig = Figure(facecolor="#1e1e1e")
+        super().__init__(fig)
         self.setParent(parent)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.ax = self.fig.add_subplot(111)
+        self.ax = fig.add_subplot(111)
         self._style_ax()
-        self.vertices:   list[tuple[float, float]] = []
-        self.wall_props: list[dict] = []
+        self.vertices:   list = []
+        self.wall_props: list = []
         self._sel_type = None
         self._sel_idx  = None
         self.mpl_connect("button_press_event", self._on_click)
@@ -113,117 +108,99 @@ class OptCanvas(FigureCanvas):
         ax.tick_params(colors="#aaaaaa")
         ax.xaxis.label.set_color("#aaaaaa")
         ax.yaxis.label.set_color("#aaaaaa")
-        for spine in ax.spines.values():
-            spine.set_edgecolor("#444444")
-        ax.set_xlabel("x [m]")
-        ax.set_ylabel("y [m]")
+        for sp in ax.spines.values(): sp.set_edgecolor("#444444")
+        ax.set_xlabel("x [m]"); ax.set_ylabel("y [m]")
         ax.set_aspect("equal", adjustable="datalim")
         ax.grid(True, color="#333333")
 
     def load(self, vertices, wall_props):
         self.vertices   = list(vertices)
         self.wall_props = list(wall_props)
-        self._sel_type  = None
-        self._sel_idx   = None
+        self._sel_type  = self._sel_idx = None
         self._redraw()
 
     def _on_click(self, event):
         if event.inaxes != self.ax or event.xdata is None or len(self.vertices) < 2:
             return
         click = (event.xdata, event.ydata)
-        vdists = [((click[0]-v[0])**2 + (click[1]-v[1])**2)**0.5 for v in self.vertices]
-        vi = int(np.argmin(vdists))
-        if vdists[vi] < 0.3:
+        vd = [((click[0]-v[0])**2+(click[1]-v[1])**2)**0.5 for v in self.vertices]
+        vi = int(np.argmin(vd))
+        if vd[vi] < 0.3:
             self._sel_type, self._sel_idx = "vertex", vi
-            self._redraw()
-            self.itemSelected.emit("vertex", vi)
-            return
+            self._redraw(); self.itemSelected.emit("vertex", vi); return
         wi = nearest_wall(click, self.vertices, tol=0.4)
         if wi is not None:
             self._sel_type, self._sel_idx = "wall", wi
-            self._redraw()
-            self.itemSelected.emit("wall", wi)
+            self._redraw(); self.itemSelected.emit("wall", wi)
 
     def _redraw(self):
-        ax = self.ax
-        ax.cla()
-        self._style_ax()
-        verts = self.vertices
-        n = len(verts)
-        if n == 0:
-            self.draw_idle()
-            return
+        ax = self.ax; ax.cla(); self._style_ax()
+        verts = self.vertices; n = len(verts)
+        if n == 0: self.draw_idle(); return
         xs, ys = [v[0] for v in verts], [v[1] for v in verts]
         if n >= 3:
-            from matplotlib.patches import Polygon as MplPolygon
-            ax.add_patch(MplPolygon(list(zip(xs, ys)), closed=True,
-                         facecolor="#2a3f54", edgecolor="#aaaaaa", linewidth=1.5, alpha=0.6))
+            from matplotlib.patches import Polygon as P
+            ax.add_patch(P(list(zip(xs,ys)), closed=True,
+                           facecolor="#2a3f54", edgecolor="#aaaaaa", linewidth=1.5, alpha=0.6))
         for i in range(n):
-            j = (i+1) % n
-            x1, y1 = verts[i]; x2, y2 = verts[j]
-            is_sel = (self._sel_type == "wall" and self._sel_idx == i)
-            ax.plot([x1,x2],[y1,y2], color="#00bfff" if is_sel else "#aaaaaa",
-                    linewidth=3 if is_sel else 1.5, zorder=3)
-            mx, my = (x1+x2)/2, (y1+y2)/2
-            length = ((x2-x1)**2+(y2-y1)**2)**0.5
-            tilt = self.wall_props[i]["tilt_deg"] if self.wall_props else 0
-            ax.text(mx, my, f" W{i+1}  {length:.2f}m  {tilt}°", color="#888888", fontsize=7, zorder=4)
+            j = (i+1)%n; x1,y1 = verts[i]; x2,y2 = verts[j]
+            sel = self._sel_type=="wall" and self._sel_idx==i
+            ax.plot([x1,x2],[y1,y2], color="#00bfff" if sel else "#aaaaaa",
+                    linewidth=3 if sel else 1.5, zorder=3)
+            l = ((x2-x1)**2+(y2-y1)**2)**0.5
+            t = self.wall_props[i]["tilt_deg"] if self.wall_props else 0
+            ax.text((x1+x2)/2,(y1+y2)/2, f" W{i+1}  {l:.2f}m  {t}°",
+                    color="#888888", fontsize=7, zorder=4)
         for i,(x,y) in enumerate(verts):
-            is_sel = (self._sel_type == "vertex" and self._sel_idx == i)
-            ax.scatter([x],[y], color="#ffdd00" if is_sel else "#ffffff",
-                       s=60 if is_sel else 30, zorder=5)
-            ax.text(x, y, f" V{i+1}", color="#cccccc", fontsize=8, zorder=6)
-        pad = 1.0
-        ax.set_xlim(min(xs)-pad, max(xs)+pad)
-        ax.set_ylim(min(ys)-pad, max(ys)+pad)
+            sel = self._sel_type=="vertex" and self._sel_idx==i
+            ax.scatter([x],[y], color="#ffdd00" if sel else "#ffffff",
+                       s=60 if sel else 30, zorder=5)
+            ax.text(x,y,f" V{i+1}", color="#cccccc", fontsize=8, zorder=6)
+        pad=1.0; ax.set_xlim(min(xs)-pad,max(xs)+pad); ax.set_ylim(min(ys)-pad,max(ys)+pad)
         self.draw_idle()
 
 
-# ── Tabla con checkbox ────────────────────────────────────────────────────────
+# ── Tabla helper ──────────────────────────────────────────────────────────────
 
-def _make_table(headers: list[str]) -> QTableWidget:
+def _make_table(headers):
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels(headers)
     t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
     t.setEditTriggers(QAbstractItemView.NoEditTriggers)
     t.setSelectionBehavior(QTableWidget.SelectRows)
-    t.setMaximumHeight(180)
+    t.setMaximumHeight(160)
     return t
 
-
-def _add_table_row(table: QTableWidget, label: str, v1, v2, v3="—", v4="—", enabled=True):
-    r = table.rowCount()
-    table.insertRow(r)
-
-    cb = QCheckBox()
-    cb.setChecked(enabled)
-    cb.setToolTip("Enable/disable this parameter for GA")
-    cb_widget = QWidget()
-    cb_lay = QHBoxLayout(cb_widget)
-    cb_lay.addWidget(cb)
-    cb_lay.setAlignment(Qt.AlignCenter)
-    cb_lay.setContentsMargins(0, 0, 0, 0)
-    table.setCellWidget(r, 0, cb_widget)
-
+def _add_row(table, label, v1, v2, v3="—", v4="—", enabled=True):
+    r = table.rowCount(); table.insertRow(r)
+    cb = QCheckBox(); cb.setChecked(enabled)
+    cb.setToolTip("Enable/disable for GA")
+    w = QWidget(); l = QHBoxLayout(w); l.addWidget(cb)
+    l.setAlignment(Qt.AlignCenter); l.setContentsMargins(0,0,0,0)
+    table.setCellWidget(r, 0, w)
     for c, val in enumerate([label, v1, v2, v3, v4], start=1):
         item = QTableWidgetItem(str(val))
-        if val == "—":
-            item.setFlags(Qt.ItemIsEnabled)
+        if val == "—": item.setFlags(Qt.ItemIsEnabled)
         table.setItem(r, c, item)
     return cb
 
-
-def _update_table_row(table: QTableWidget, row: int, v1, v2, v3="—", v4="—"):
+def _update_row(table, row, v1, v2, v3="—", v4="—"):
     for c, val in enumerate([v1, v2, v3, v4], start=2):
         item = QTableWidgetItem(str(val))
-        if val == "—":
-            item.setFlags(Qt.ItemIsEnabled)
+        if val == "—": item.setFlags(Qt.ItemIsEnabled)
         table.setItem(row, c, item)
 
 
-# ── Tab principal ─────────────────────────────────────────────────────────────
+# ── Pipeline placeholder ──────────────────────────────────────────────────────
 
-class RoomOptimizationTab(QWidget):
+def run_modal_pipeline():
+    print("run_modal_pipeline — placeholder")
+
+
+# ── Pantalla 1: configuración GA ──────────────────────────────────────────────
+
+class GAConfigScreen(QWidget):
+    runRequested = Signal()
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -243,8 +220,7 @@ class RoomOptimizationTab(QWidget):
         root.addWidget(self._build_canvas_panel(), stretch=3)
         root.addWidget(self._build_control_panel(), stretch=1)
 
-    # ── Canvas ────────────────────────────────────────────────────────────────
-    def _build_canvas_panel(self) -> QGroupBox:
+    def _build_canvas_panel(self):
         box = QGroupBox(" Floor Plan (read-only)")
         lay = QVBoxLayout(box)
         self.canvas = OptCanvas()
@@ -252,169 +228,298 @@ class RoomOptimizationTab(QWidget):
         lay.addWidget(self.canvas)
         return box
 
-    # ── Panel control ─────────────────────────────────────────────────────────
-    def _build_control_panel(self) -> QWidget:
+    def _build_control_panel(self):
         panel = QWidget()
         lay   = QVBoxLayout(panel)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(6)
+        lay.setContentsMargins(0,0,0,0); lay.setSpacing(6)
 
-        # Info selección
         self.info_lbl = QLabel("Click a vertex or wall to set its GA range.")
         self.info_lbl.setWordWrap(True)
         self.info_lbl.setStyleSheet("color: #888888; font-size: 9pt;")
         lay.addWidget(self.info_lbl)
 
-        # Tabla Vertices
         vbox = QGroupBox(" Vertices")
         vlay = QVBoxLayout(vbox)
-        self.vtable = _make_table(["✓", "Param", "X min", "X max", "Y min", "Y max"])
-        vlay.addWidget(self.vtable)
-        lay.addWidget(vbox)
+        self.vtable = _make_table(["✓","Param","X min","X max","Y min","Y max"])
+        vlay.addWidget(self.vtable); lay.addWidget(vbox)
 
-        # Tabla Wall Tilt
         wbox = QGroupBox(" Wall Tilt")
         wlay = QVBoxLayout(wbox)
-        self.wtable = _make_table(["✓", "Param", "Tilt min", "Tilt max", "", ""])
-        wlay.addWidget(self.wtable)
-        lay.addWidget(wbox)
+        self.wtable = _make_table(["✓","Param","Tilt min","Tilt max","",""])
+        wlay.addWidget(self.wtable); lay.addWidget(wbox)
 
-        # Tabla Height / Area / Volume
         hbox = QGroupBox(" Height / Area / Volume")
         hlay = QVBoxLayout(hbox)
-        self.htable = _make_table(["✓", "Param", "Min", "Max", "", ""])
-        hlay.addWidget(self.htable)
-        lay.addWidget(hbox)
+        self.htable = _make_table(["✓","Param","Min","Max","",""])
+        hlay.addWidget(self.htable); lay.addWidget(hbox)
 
         lay.addStretch()
 
-        # Botones
         btn_frame = QFrame()
-        btn_grid  = QGridLayout(btn_frame)
-        btn_grid.setSpacing(6)
-        btn_grid.setContentsMargins(0, 6, 0, 6)
+        grid = QGridLayout(btn_frame)
+        grid.setSpacing(6); grid.setContentsMargins(0,6,0,6)
         for text, role, cb, r, c, cs in [
             ("Load from Design", "secondary", self._load_from_design, 0, 0, 1),
             ("Load Room File",   "secondary", self._load_room_file,   0, 1, 1),
-            ("Run GA",           "success",   self._run_ga,           1, 0, 1),
-            ("Clear Ranges",     "danger",    self._clear_ranges,     1, 1, 1),
+            ("Clear Ranges",     "danger",    self._clear_ranges,     1, 0, 1),
+            ("Run GA",           "success",   self._run_ga,           1, 1, 1),
         ]:
-            btn = QPushButton(text)
-            btn.setProperty("role", role)
+            btn = QPushButton(text); btn.setProperty("role", role)
             btn.clicked.connect(cb)
             btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            btn_grid.addWidget(btn, r, c, 1, cs)
-        btn_grid.setColumnStretch(0, 1)
-        btn_grid.setColumnStretch(1, 1)
+            grid.addWidget(btn, r, c, 1, cs)
+        grid.setColumnStretch(0,1); grid.setColumnStretch(1,1)
         lay.addWidget(btn_frame)
-
         return panel
 
-    # ── Carga de datos ────────────────────────────────────────────────────────
+    # ── Carga ─────────────────────────────────────────────────────────────────
     def _load_room_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load Room", "", "JSON Files (*.json)")
-        if not path:
-            return
+        if not path: return
         try:
-            with open(path, 'r') as f:
-                raw = json.load(f)
+            with open(path) as f: raw = json.load(f)
             self.state.room_geometry = raw.get("data", raw)
             self._load_from_design()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not load file:\n{e}")
+            QMessageBox.critical(self, "Error", str(e))
 
     def _load_from_design(self):
         geom = self.state.room_geometry
-        if not geom:
-            QMessageBox.warning(self, "Warning", "No room data found.")
-            return
-
-        verts_data = geom.get("vertices", {})
-        walls_data = geom.get("walls", {})
-        height     = geom.get("Z", 3.0)
-
-        verts = [(v[0], v[1]) for v in verts_data.values()]
-        n     = len(verts)
-        walls = [{"id": f"W{i+1}", "tilt_deg": walls_data.get(f"W{i+1}", 0.0)}
-                 for i in range(n)]
-
-        self.vertex_ranges = [{"xmin":0.0,"xmax":0.0,"ymin":0.0,"ymax":0.0} for _ in verts]
-        self.wall_ranges   = [{"tmin":0.0,"tmax":0.0} for _ in walls]
-        self.height_ranges = {"zmin": height, "zmax": height}
-
+        if not geom: QMessageBox.warning(self, "Warning", "No room data found."); return
+        verts  = [(v[0],v[1]) for v in geom.get("vertices",{}).values()]
+        walls  = [{"id":f"W{i+1}","tilt_deg":geom.get("walls",{}).get(f"W{i+1}",0.0)}
+                  for i in range(len(verts))]
+        height = geom.get("Z", 3.0)
+        self.vertex_ranges = [{"xmin":0.,"xmax":0.,"ymin":0.,"ymax":0.} for _ in verts]
+        self.wall_ranges   = [{"tmin":0.,"tmax":0.} for _ in walls]
+        self.height_ranges = {"zmin":height,"zmax":height}
         self.canvas.load(verts, walls)
         self._rebuild_tables(verts, walls, height)
 
     def _rebuild_tables(self, verts, walls, height):
-        from geometry import signed_area
-        self.vtable.setRowCount(0)
-        self.wtable.setRowCount(0)
-        self.htable.setRowCount(0)
-        self.vertex_cbs.clear()
-        self.wall_cbs.clear()
-
+        self.vtable.setRowCount(0); self.wtable.setRowCount(0); self.htable.setRowCount(0)
+        self.vertex_cbs.clear(); self.wall_cbs.clear()
         for i, r in enumerate(self.vertex_ranges):
-            cb = _add_table_row(self.vtable, f"V{i+1}", r["xmin"], r["xmax"], r["ymin"], r["ymax"])
-            self.vertex_cbs.append(cb)
-
+            self.vertex_cbs.append(_add_row(self.vtable, f"V{i+1}",
+                r["xmin"], r["xmax"], r["ymin"], r["ymax"]))
         for i, r in enumerate(self.wall_ranges):
-            cb = _add_table_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"])
-            self.wall_cbs.append(cb)
-
+            self.wall_cbs.append(_add_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"]))
         area = abs(signed_area(verts)) if len(verts) >= 3 else 0.0
-        vol  = area * height
-        hr   = self.height_ranges
-        self.height_cb = _add_table_row(self.htable, "Height", hr["zmin"], hr["zmax"])
-        _add_table_row(self.htable, "Area",   f"{area:.3f}", "—", enabled=False)
-        _add_table_row(self.htable, "Volume", f"{vol:.3f}",  "—", enabled=False)
+        hr = self.height_ranges
+        self.height_cb = _add_row(self.htable, "Height", hr["zmin"], hr["zmax"])
+        _add_row(self.htable, "Area",   f"{area:.3f}", "—", enabled=False)
+        _add_row(self.htable, "Volume", f"{area*height:.3f}", "—", enabled=False)
 
     # ── Selección ─────────────────────────────────────────────────────────────
-    def _on_item_selected(self, kind: str, idx: int):
-        if kind == "vertex":
-            if idx >= len(self.vertex_ranges):
-                return
-            self.info_lbl.setText(f"V{idx+1} selected — set X/Y range")
+    def _on_item_selected(self, kind, idx):
+        n_v = len(self.canvas.vertices)
+        if kind == "vertex" and idx < len(self.vertex_ranges):
+            self.info_lbl.setText(f"V{idx+1} selected")
             self.vtable.selectRow(idx)
             dlg = VertexRangeDialog(idx, self.vertex_ranges[idx], self)
             if dlg.exec() == QDialog.Accepted:
                 self.vertex_ranges[idx] = dlg.get_ranges()
                 r = self.vertex_ranges[idx]
-                _update_table_row(self.vtable, idx, r["xmin"], r["xmax"], r["ymin"], r["ymax"])
-        elif kind == "wall":
-            if idx >= len(self.wall_ranges):
-                return
-            self.info_lbl.setText(f"W{idx+1} selected — set tilt range")
+                _update_row(self.vtable, idx, r["xmin"], r["xmax"], r["ymin"], r["ymax"])
+        elif kind == "wall" and idx < len(self.wall_ranges):
+            self.info_lbl.setText(f"W{idx+1} selected")
             self.wtable.selectRow(idx)
             dlg = WallRangeDialog(idx, self.wall_ranges[idx], self)
             if dlg.exec() == QDialog.Accepted:
                 self.wall_ranges[idx] = dlg.get_ranges()
                 r = self.wall_ranges[idx]
-                _update_table_row(self.wtable, idx, r["tmin"], r["tmax"])
-
-    # ── Callbacks ─────────────────────────────────────────────────────────────
-    def _run_ga(self):
-        # Recopilar parámetros activos
-        active_vertices = [
-            {"id": f"V{i+1}", **self.vertex_ranges[i]}
-            for i, cb in enumerate(self.vertex_cbs) if cb.isChecked()
-        ]
-        active_walls = [
-            {"id": f"W{i+1}", **self.wall_ranges[i]}
-            for i, cb in enumerate(self.wall_cbs) if cb.isChecked()
-        ]
-        optimize_height = self.height_cb.isChecked() if self.height_cb else False
-        print("Running GA with:")
-        print("  Vertices:", active_vertices)
-        print("  Walls:",    active_walls)
-        print("  Height:",   self.height_ranges if optimize_height else "disabled")
+                _update_row(self.wtable, idx, r["tmin"], r["tmax"])
 
     def _clear_ranges(self):
-        self.vertex_ranges = [{"xmin":0.0,"xmax":0.0,"ymin":0.0,"ymax":0.0}
-                               for _ in self.vertex_ranges]
-        self.wall_ranges   = [{"tmin":0.0,"tmax":0.0} for _ in self.wall_ranges]
-        self.height_ranges = {"zmin":0.0,"zmax":0.0}
-        for i in range(len(self.vertex_ranges)):
-            _update_table_row(self.vtable, i, 0.0, 0.0, 0.0, 0.0)
+        n_v = len(self.vertex_ranges)
+        self.vertex_ranges = [{"xmin":0.,"xmax":0.,"ymin":0.,"ymax":0.} for _ in self.vertex_ranges]
+        self.wall_ranges   = [{"tmin":0.,"tmax":0.} for _ in self.wall_ranges]
+        self.height_ranges = {"zmin":0.,"zmax":0.}
+        for i in range(n_v):
+            _update_row(self.vtable, i, 0.0, 0.0, 0.0, 0.0)
         for i in range(len(self.wall_ranges)):
-            _update_table_row(self.wtable, i, 0.0, 0.0)
-        _update_table_row(self.htable, 0, 0.0, 0.0)
+            _update_row(self.wtable, i, 0.0, 0.0)
+        if self.htable.rowCount() > 0:
+            _update_row(self.htable, 0, 0.0, 0.0)
+
+    def _run_ga(self):
+        active_v = [{"id":f"V{i+1}",**r} for i,r in enumerate(self.vertex_ranges)
+                    if self.vertex_cbs[i].isChecked()]
+        active_w = [{"id":f"W{i+1}",**r} for i,r in enumerate(self.wall_ranges)
+                    if self.wall_cbs[i].isChecked()]
+        opt_z    = self.height_cb.isChecked() if self.height_cb else False
+        print("GA params:", active_v, active_w, self.height_ranges if opt_z else "Z disabled")
+        run_modal_pipeline()
+        self.runRequested.emit()
+
+
+# ── Pantalla 2: resultados modales ────────────────────────────────────────────
+
+class ModalResultsScreen(QWidget):
+    def __init__(self, state, parent=None):
+        super().__init__(parent)
+        self.state = state
+        self._build()
+
+    def _build(self):
+        root = QHBoxLayout(self)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(10)
+        root.addWidget(self._build_views_panel(), stretch=3)
+        root.addWidget(self._build_right_panel(), stretch=1)
+
+    def _build_views_panel(self):
+        panel = QWidget()
+        lay   = QVBoxLayout(panel)
+        lay.setContentsMargins(0,0,0,0); lay.setSpacing(8)
+
+        top = QHBoxLayout(); top.setSpacing(8)
+
+        # 2D Plant View
+        box2d = QGroupBox(" 2D Plant View")
+        lay2d = QVBoxLayout(box2d)
+        self.canvas_2d = OptCanvas()
+        lay2d.addWidget(self.canvas_2d)
+        top.addWidget(box2d, stretch=1)
+
+        # 3D Room Viewer
+        box3d = QGroupBox(" 3D Room Viewer")
+        lay3d = QVBoxLayout(box3d)
+        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+        import matplotlib.pyplot as plt
+        self.fig3d = Figure(facecolor="#000000")
+        self.canvas_3d = FigureCanvas(self.fig3d)
+        self.canvas_3d.setStyleSheet("background-color: #000000;")
+        self.canvas_3d.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        lay3d.addWidget(self.canvas_3d)
+        top.addWidget(box3d, stretch=1)
+
+        lay.addLayout(top, stretch=2)
+
+        # Room Modal Footprint placeholder
+        footprint_box = QGroupBox(" Room Modal Footprint")
+        footprint_lay = QVBoxLayout(footprint_box)
+        lbl_fp = QLabel("[ Room Modal Footprint ]")
+        lbl_fp.setAlignment(Qt.AlignCenter)
+        lbl_fp.setStyleSheet("color: #555555; font-size: 12pt;")
+        footprint_lay.addWidget(lbl_fp)
+        lay.addWidget(footprint_box, stretch=1)
+
+        return panel
+
+    def _build_right_panel(self):
+        panel = QWidget()
+        lay   = QVBoxLayout(panel)
+        lay.setContentsMargins(0,0,0,0); lay.setSpacing(8)
+
+        self.room_combo = QComboBox()
+        self.room_combo.addItem("Base Room")
+        self.room_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        lay.addWidget(self.room_combo)
+
+        data_box = QGroupBox(" Room Data")
+        data_lay = QVBoxLayout(data_box)
+        self.room_data_lbl = QLabel("No data loaded.")
+        self.room_data_lbl.setWordWrap(True)
+        self.room_data_lbl.setAlignment(Qt.AlignTop)
+        self.room_data_lbl.setStyleSheet("color: #aaaaaa; font-size: 9pt;")
+        data_lay.addWidget(self.room_data_lbl)
+        lay.addWidget(data_box, stretch=2)
+
+        opts_box = QGroupBox(" Options")
+        opts_lay = QVBoxLayout(opts_box)
+        btn_back = QPushButton("← Back to GA Config")
+        btn_back.setProperty("role", "secondary")
+        btn_back.clicked.connect(self._go_back)
+        opts_lay.addWidget(btn_back)
+        lay.addWidget(opts_box, stretch=1)
+
+        return panel
+
+    def load_room(self, geom: dict):
+        verts  = [(v[0],v[1]) for v in geom.get("vertices",{}).values()]
+        walls  = [{"id":f"W{i+1}","tilt_deg":geom.get("walls",{}).get(f"W{i+1}",0.0)}
+                  for i in range(len(verts))]
+        self.canvas_2d.load(verts, walls)
+
+        # Room data label
+        lines = [f"Z: {geom.get('Z','')} m"]
+        for k,v in geom.get("vertices",{}).items(): lines.append(f"{k}: ({v[0]:.3f}, {v[1]:.3f})")
+        for k,v in geom.get("walls",{}).items(): lines.append(f"{k}: {v}°")
+        self.room_data_lbl.setText("\n".join(lines))
+
+        # 3D render
+        self._render_3d(geom)
+
+    def _render_3d(self, geom: dict):
+        try:
+            from geometry import compute_ceiling
+            import pyvista as pv
+
+            verts  = [(v[0],v[1]) for v in geom.get("vertices",{}).values()]
+            tilts  = list(geom.get("walls",{}).values())
+            height = geom.get("Z", 3.0)
+            floor, ceiling = compute_ceiling(verts, height, tilts)
+
+            n   = len(floor)
+            pts = np.array([(x,y,0.0) for x,y in floor] + list(ceiling))
+            faces = (
+                [[n] + list(reversed(range(n)))] +
+                [[n] + list(range(n, 2*n))] +
+                [[4, i, (i+1)%n, (i+1)%n+n, i+n] for i in range(n)]
+            )
+            mesh    = pv.PolyData(pts, np.hstack(faces))
+            plotter = pv.Plotter(off_screen=True)
+            plotter.set_background("#000000")
+            plotter.add_mesh(mesh, color="silver", show_edges=False, opacity=0.3)
+            plotter.view_isometric()
+            plotter.reset_camera()
+            screenshot = plotter.screenshot()
+            plotter.close()
+
+            self.fig3d.clear()
+            self.fig3d.set_facecolor("#000000")
+            ax = self.fig3d.add_subplot(111)
+            ax.set_facecolor("#000000")
+            ax.imshow(screenshot)
+            ax.axis("off")
+            self.fig3d.tight_layout(pad=0)
+            self.canvas_3d.draw()
+        except Exception as e:
+            print(f"3D render error: {e}")
+
+    def _go_back(self):
+        stack = self.parent()
+        if isinstance(stack, QStackedWidget):
+            stack.setCurrentIndex(0)
+
+
+# ── Tab principal Room Optimization ──────────────────────────────────────────
+
+class RoomOptimizationTab(QWidget):
+    def __init__(self, state, parent=None):
+        super().__init__(parent)
+        self.state = state
+        self._build()
+
+    def _build(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0,0,0,0)
+
+        self.stack = QStackedWidget()
+        self.ga_screen      = GAConfigScreen(self.state)
+        self.results_screen = ModalResultsScreen(self.state)
+
+        self.stack.addWidget(self.ga_screen)
+        self.stack.addWidget(self.results_screen)
+        self.stack.setCurrentWidget(self.ga_screen)
+
+        self.ga_screen.runRequested.connect(self._on_run_requested)
+        root.addWidget(self.stack)
+
+    def _on_run_requested(self):
+        self.results_screen.load_room(self.state.room_geometry)
+        self.stack.setCurrentWidget(self.results_screen)
+
+    def _load_from_design(self):
+        self.ga_screen._load_from_design()
