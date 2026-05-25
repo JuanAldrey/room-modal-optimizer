@@ -479,7 +479,7 @@ class RoomDesignTab(QWidget):
         if not path.lower().endswith('.json'):
             path += '.json'
         with open(path, 'w') as f:
-            json.dump({"data": self.state.room_geometry}, f, indent=4)
+            json.dump(self.state.room_geometry, f, indent=4)
         print(f"Saved: {path}")
 
     def _to_room_optimize(self):
@@ -509,7 +509,7 @@ class RoomDesignTab(QWidget):
             parent = parent.parent()
 
     def refresh_from_state(self):
-        geom = self.state.room_geometry
+        geom = self.state.room_geometry.get("data", {})
         if not geom:
             return
         verts_data = geom.get("vertices", {})

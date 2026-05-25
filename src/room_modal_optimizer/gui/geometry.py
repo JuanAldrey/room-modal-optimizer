@@ -147,16 +147,20 @@ def build_geometry_dict(
     original_verts: list[tuple[float, float]] | None = None
 ) -> dict:
     """
-    Formato:
+    Devuelve:
     {
-      "vertices": {"V1": [x, y], ...},
-      "walls":    {"W1": ang, ...},
-      "Z":        h
+      "data": {
+        "vertices": {"V1": [x, y], ...},
+        "walls":    {"W1": ang, ...},
+        "Z":        h
+      }
     }
     """
     verts_to_save = original_verts if original_verts is not None else floor_verts
     return {
-        "vertices": {f"V{i+1}": [float(x), float(y)] for i, (x, y) in enumerate(verts_to_save)},
-        "walls":    {f"W{i+1}": float(w["tilt_deg"]) for i, w in enumerate(wall_props)},
-        "Z":        float(height)
+        "data": {
+            "vertices": {f"V{i+1}": [float(x), float(y)] for i,(x,y) in enumerate(verts_to_save)},
+            "walls":    {f"W{i+1}": float(w["tilt_deg"]) for i,w in enumerate(wall_props)},
+            "Z":        float(height)
+        }
     }
