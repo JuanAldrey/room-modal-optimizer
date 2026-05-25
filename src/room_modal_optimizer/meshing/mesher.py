@@ -1,6 +1,7 @@
 import gmsh
 import math
 from pathlib import Path
+from room_modal_optimizer.meshing.intersection_validator import IntersectionValidator
 
 class Mesher:
     def __init__(self):
@@ -17,6 +18,9 @@ class Mesher:
         
         self.floor_pts = None
         self.ceiling_pts = None
+        
+        self.intersection_validator = IntersectionValidator()
+        self.intersection_error = False
     
     def create(self, params, lc=0.25, room_name='room', visualize=False, source_pos=None):
         self.params = params['data']
@@ -28,24 +32,38 @@ class Mesher:
         self.ceiling = None
         self.walls = []
         self.source = None
+        self.intersection_error = False
         
         gmsh.initialize()
-        gmsh.model.add(self.room_name)
-        self.setFloorPoints()
-        self.setCeilingPoints()
-        self.buildGeometry()
-        
-        gmsh.model.occ.synchronize()
-        if self.source_pos is not None:
-            self.setTagsWithCenterOfMass()
-        
-        self.addPhysicalGroups()
-        mesh_path = self.generateMesh()
-        if visualize:
-            gmsh.fltk.run()
-        gmsh.finalize()
-        
-        return mesh_path
+        try:
+            gmsh.option.setNumber("General.Terminal", 0)
+            gmsh.option.setNumber("General.Verbosity", 0)
+            
+            gmsh.model.add(self.room_name)
+
+            self.setFloorPoints()
+            self.setCeilingPoints()
+
+            if self.intersection_error:
+                return None
+
+            self.buildGeometry()
+
+            gmsh.model.occ.synchronize()
+
+            if self.source_pos is not None:
+                self.setTagsWithCenterOfMass()
+
+            self.addPhysicalGroups()
+            mesh_path = self.generateMesh()
+
+            if visualize:
+                gmsh.fltk.run()
+
+            return mesh_path
+
+        finally:
+            gmsh.finalize()
         
     def setFloorPoints(self):
         vertices = self.params["vertices"]
@@ -102,12 +120,25 @@ class Mesher:
             )
 
             ceiling_pts.append(ceiling_pt)
+            
+        ceiling_crossings = self.intersection_validator.find_polygon_crossings(ceiling_pts)
+        
+        if ceiling_crossings:
+            print("\nInvalid ceiling polygon: crossings detected")
+
+            for crossing in ceiling_crossings:
+                print(
+                    f"Edge {crossing['edge_a']} crosses edge {crossing['edge_b']}"
+                )
+                print("points_a:", crossing["points_a"])
+                print("points_b:", crossing["points_b"])
+                
+            self.intersection_error = True
 
         self.ceiling_pts = ceiling_pts
 
     def buildGeometry(self):
         lc = self.lc
-        
         factory = gmsh.model.occ
         
         # Floor
@@ -116,7 +147,7 @@ class Mesher:
             factory.addLine(floor_pts[i], floor_pts[(i + 1) % len(floor_pts)])
             for i in range(len(floor_pts))
         ]
-        
+     
         cl_floor = factory.addCurveLoop(floor_lines)
         floor = factory.addPlaneSurface([cl_floor])
         
@@ -126,6 +157,17 @@ class Mesher:
             factory.addLine(ceiling_pts[i], ceiling_pts[(i + 1) % len(ceiling_pts)])
             for i in range(len(ceiling_pts))
         ]
+        
+        """
+        Print to check intersections in tests/meshing/check-polygon.py 
+        print("floor_pts:")
+        for i, p in enumerate(self.floor_pts):
+            print(f"F{i+1}: {p}")
+
+        print("ceiling_pts:")
+        for i, p in enumerate(self.ceiling_pts):
+            print(f"C{i+1}: {p}")
+        """
         
         cl_ceiling = factory.addCurveLoop(ceiling_lines)
         ceiling = factory.addPlaneSurface([cl_ceiling])
