@@ -1,6 +1,6 @@
 import numpy as np
 
-class Evaluator:
+class ModalEvaluator:
     
     @staticmethod
     def evaluate(f_modes, n):
