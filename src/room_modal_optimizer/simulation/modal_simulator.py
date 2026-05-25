@@ -34,10 +34,10 @@ class ModalSimulator:
         # Room name
         self.room_name = None
 
-    def simulate(self, mesh_path, room_name='room', export=False):
+    def simulate(self, mesh_path, order=2,room_name='room', export=False):
         self.room_name = room_name
         self.loadMesh(mesh_path)
-        self.setup()
+        self.setup(order)
         self.computeModalAnalysis()
         self.obtainModes()
         pairs = sorted(zip(self.eig_freq, self.eig_vector), key=lambda x: x[0])
@@ -58,8 +58,8 @@ class ModalSimulator:
         assert mesh_data.facet_tags is not None
         self.facet_tags = mesh_data.facet_tags
         
-    def setup(self):
-        self.V = fem.functionspace(self.domain, ("Lagrange", 2))
+    def setup(self, order):
+        self.V = fem.functionspace(self.domain, ("Lagrange", order))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
