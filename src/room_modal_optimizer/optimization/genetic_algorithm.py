@@ -7,35 +7,24 @@ from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
 
-class GeneticAlgorithm:
-    def __init__(self, gene_space_config):
-        # TODO: define dynamic params
-        self.BASE_PARAMS = {
-            "data": {
-                "vertices": {
-                    "V1": [0.0, 0.0],
-                    "V2": [0.0, 0.0],
-                    "V3": [0.0, 0.0],
-                    "V4": [0.0, 0.0],
-                    "V5": [0.0, 0.0],
-                    "V6": [0.0, 0.0],
-                    "V7": [0.0, 0.0],
-                    "V8": [0.0, 0.0],
-                },
-                "walls": {
-                    "W1": 0.0,
-                    "W2": 0.0,
-                    "W3": 0.0,
-                    "W4": 0.0,
-                    "W5": 0.0,
-                    "W6": 0.0,
-                    "W7": 0.0,
-                    "W8": 0.0,
-                },
-                "Z": 0.0,
-            }
-        }
+# Gene space config format:
+gene_space_config = {
+    "vertices": {
+        "V1": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V5": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V8": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+    },
+    "walls": {
+        "W1": {"low": -5.0, "high": 5.0},
+        "W2": {"low": -5.0, "high": 5.0},
+        "W5": {"low": -5.0, "high": 5.0},
+        "W7": {"low": -5.0, "high": 5.0},
+    },
+    "Z": {"low": -5.0, "high": 5.0}
+}
 
+class GeneticAlgorithm:
+    def __init__(self, gene_space_config, n_walls):
         self.mesher = Mesher()
         self.modal_simulator = ModalSimulator()
         self.modal_evaluator = ModalEvaluator()
@@ -45,6 +34,11 @@ class GeneticAlgorithm:
             self.modal_evaluator,
         )
 
+        self.ga_instance = None
+        self.genes = []
+        self.gene_space = self.define_gene_space(gene_space_config)
+        self.BASE_PARAMS = self.define_base_params(n_walls)
+
         self.fitness_history = {
             "generation": [],
             "best_fitness": [],
@@ -52,12 +46,24 @@ class GeneticAlgorithm:
             "worst_fitness": [],
         }
 
-        self.gene_space = self.define_gene_space(gene_space_config)
-        self.ga_instance = None
-
     def run(self):
         self.ga_instance = self.create_ga_instance()
         self.ga_instance.run()
+
+    def define_base_params(self, n_walls):
+        return {
+            "data": {
+                "vertices": {
+                    f"V{i + 1}": [0.0, 0.0]
+                    for i in range(n_walls)
+                },
+                "walls": {
+                    f"W{i + 1}": 0.0
+                    for i in range(n_walls)
+                },
+                "Z": 0.0,
+            }
+        }
 
     # TODO: define dynamic param assignation
     def solution_to_params(self, solution):
@@ -69,8 +75,6 @@ class GeneticAlgorithm:
 
         # Gen 8: altura
         params["data"]["Z"] = float(solution[8])
-        
-        #print(params)
 
         return params
     
@@ -93,7 +97,7 @@ class GeneticAlgorithm:
         else:
             fitness = 1.0 / (1.0 + abs(idx))
 
-        #print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
+        print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
         return fitness
     
@@ -117,19 +121,32 @@ class GeneticAlgorithm:
         print("Worst fitness:", worst_fitness)
         print("==============================\n")
 
-    # TODO: define a dynamic gene space
     def define_gene_space(self, gene_space_config):
-        return [
-            {"low": -5.0, "high": 5.0},  # W1
-            {"low": -5.0, "high": 5.0},  # W2
-            {"low": -5.0, "high": 5.0},  # W3
-            {"low": -5.0, "high": 5.0},  # W4
-            {"low": -5.0, "high": 5.0},  # W5
-            {"low": -5.0, "high": 5.0},  # W6
-            {"low": -5.0, "high": 5.0},  # W7
-            {"low": -5.0, "high": 5.0},  # W8
-            {"low": 2.4, "high": 3.6},   # Z
-        ]
+        gene_space = []
+        for vertex_key, vertex_config in gene_space_config["vertices"].items():
+            gene_space.append({
+                "low": vertex_config["center"][0] + vertex_config["dx"][0],
+                "high": vertex_config["center"][0] + vertex_config["dx"][1]
+                })
+            gene_space.append({
+                "low": vertex_config["center"][1] + vertex_config["dy"][0], 
+                "high": vertex_config["center"][1] + vertex_config["dy"][1]
+                })
+            self.genes.append(vertex_key)
+        for wall_key, wall_config in gene_space_config["walls"].items():
+            gene_space.append({
+                "low": wall_config["low"], 
+                "high": wall_config["high"]
+                })
+            self.genes.append(wall_key)
+        if gene_space_config["Z"]:
+            gene_space.append({
+                "low": gene_space_config["Z"]["low"],
+                "high": gene_space_config["Z"]["high"],
+            })
+            self.genes.append("Z")
+
+        return gene_space
     
     # TODO: investigate better GA params
     def create_ga_instance(self):
