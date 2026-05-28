@@ -10,9 +10,9 @@ from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
 # Gene space config format:
 gene_space_config = {
     "vertices": {
-        "V1": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
-        "V5": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
-        "V8": {"center": [1.0, 1.0],"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V1": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V5": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V8": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
     },
     "walls": {
         "W1": {"low": -5.0, "high": 5.0},
@@ -20,11 +20,37 @@ gene_space_config = {
         "W5": {"low": -5.0, "high": 5.0},
         "W7": {"low": -5.0, "high": 5.0},
     },
-    "Z": {"low": -5.0, "high": 5.0}
+    "Z": {"low": 2.0, "high": 5.0}
 }
 
-class GeneticAlgorithm:
-    def __init__(self, gene_space_config, n_walls):
+base_params = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [2.0, -0.2],
+            "V3": [4.0, 0.3],
+            "V4": [4.7, 1.6],
+            "V5": [4.0, 3.0],
+            "V6": [2.4, 3.5],
+            "V7": [0.7, 3.0],
+            "V8": [-0.4, 1.4]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0,
+            "W5": 0.0,
+            "W6": 0.0,
+            "W7": 0.0,
+            "W8": 0.0
+        },
+        "Z": 3.0
+    }
+}
+
+class ModalOptimizer:
+    def __init__(self, base_params, gene_space_config):
         self.mesher = Mesher()
         self.modal_simulator = ModalSimulator()
         self.modal_evaluator = ModalEvaluator()
@@ -34,10 +60,10 @@ class GeneticAlgorithm:
             self.modal_evaluator,
         )
 
+        self.base_params = base_params
         self.ga_instance = None
         self.genes = []
         self.gene_space = self.define_gene_space(gene_space_config)
-        self.BASE_PARAMS = self.define_base_params(n_walls)
 
         self.fitness_history = {
             "generation": [],
@@ -47,34 +73,22 @@ class GeneticAlgorithm:
         }
 
     def run(self):
-        self.ga_instance = self.create_ga_instance()
+        self.create_ga_instance()
         self.ga_instance.run()
 
-    def define_base_params(self, n_walls):
-        return {
-            "data": {
-                "vertices": {
-                    f"V{i + 1}": [0.0, 0.0]
-                    for i in range(n_walls)
-                },
-                "walls": {
-                    f"W{i + 1}": 0.0
-                    for i in range(n_walls)
-                },
-                "Z": 0.0,
-            }
-        }
-
-    # TODO: define dynamic param assignation
     def solution_to_params(self, solution):
-        params = copy.deepcopy(self.BASE_PARAMS)
-
-        # Genes 0 a 7: inclinaciones de paredes
-        for i in range(8):
-            params["data"]["walls"][f"W{i + 1}"] = float(solution[i])
-
-        # Gen 8: altura
-        params["data"]["Z"] = float(solution[8])
+        params = copy.deepcopy(self.base_params)
+        solution_idx = 0
+        for gene in self.genes:
+            if gene["type"] == "vertex":
+                params["data"]["vertices"][gene["key"]] = [float(solution[solution_idx]), float(solution[solution_idx + 1])]
+                solution_idx += 2
+            elif gene["type"] == "wall":
+                params["data"]["walls"][gene["key"]] = float(solution[solution_idx])
+                solution_idx += 1
+            elif gene["type"] == "height":
+                params["data"]["Z"] = float(solution[solution_idx])
+                solution_idx += 1
 
         return params
     
@@ -125,26 +139,26 @@ class GeneticAlgorithm:
         gene_space = []
         for vertex_key, vertex_config in gene_space_config["vertices"].items():
             gene_space.append({
-                "low": vertex_config["center"][0] + vertex_config["dx"][0],
-                "high": vertex_config["center"][0] + vertex_config["dx"][1]
+                "low": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][0],
+                "high": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][1]
                 })
             gene_space.append({
-                "low": vertex_config["center"][1] + vertex_config["dy"][0], 
-                "high": vertex_config["center"][1] + vertex_config["dy"][1]
+                "low": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][0], 
+                "high": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][1]
                 })
-            self.genes.append(vertex_key)
+            self.genes.append(({"type": "vertex", "key": vertex_key}))
         for wall_key, wall_config in gene_space_config["walls"].items():
             gene_space.append({
                 "low": wall_config["low"], 
                 "high": wall_config["high"]
                 })
-            self.genes.append(wall_key)
+            self.genes.append(({"type": "wall", "key": wall_key}))
         if gene_space_config["Z"]:
             gene_space.append({
                 "low": gene_space_config["Z"]["low"],
                 "high": gene_space_config["Z"]["high"],
             })
-            self.genes.append("Z")
+            self.genes.append(({"type": "height", "key": "Z"}))
 
         return gene_space
     
