@@ -79,7 +79,7 @@ class DirectSimulator:
         
     def setup(self):
         print("Initial setup...")
-        self.V = fem.functionspace(self.domain, ("Lagrange", 1))
+        self.V = fem.functionspace(self.domain, ("Lagrange", 2))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
