@@ -212,7 +212,7 @@ class Mesher:
             self.walls = walls
             
     
-    def addSourceSphereVolume(self, radius=0.3):
+    def addSourceSphereVolume(self, radius=0.1):
         x, y, z = self.source_pos
         sphere = gmsh.model.occ.addSphere(x, y, z, radius)
         

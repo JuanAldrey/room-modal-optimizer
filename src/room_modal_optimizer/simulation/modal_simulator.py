@@ -73,7 +73,7 @@ class ModalSimulator:
         self.K.assemble()
         self.M.assemble()
     
-    def computeModalAnalysis(self, target_freq=140.0, n_modes=160, tol=1e-8):
+    def computeModalAnalysis(self, target_freq=70.0, n_modes=160, tol=1e-8):
         self.n_modes = n_modes
         sigma = (2 * np.pi * target_freq / self.c) ** 2
 

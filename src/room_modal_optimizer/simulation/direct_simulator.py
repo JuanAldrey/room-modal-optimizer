@@ -26,7 +26,7 @@ class DirectSimulator:
         self.p_a = None
 
         # Frequency data
-        self.freqs = np.arange(20, 201, 2)
+        self.freqs = np.arange(20, 101, 2)
         self.pressure_response = None
         self.spl_response = None
 
@@ -79,7 +79,7 @@ class DirectSimulator:
         
     def setup(self):
         print("Initial setup...")
-        self.V = fem.functionspace(self.domain, ("Lagrange", 2))
+        self.V = fem.functionspace(self.domain, ("Lagrange", 1))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
@@ -97,10 +97,11 @@ class DirectSimulator:
         print("Setting up variational formulation...")
         
         a = ufl.inner(ufl.grad(self.p), ufl.grad(self.v)) * ufl.dx - self.k**2 * ufl.inner(self.p, self.v) * ufl.dx
-        a += 1j * self.k / self.floor_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Floor"])
-        a += 1j * self.k / self.ceiling_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Ceiling"])
-        a += 1j * self.k / self.wall_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Walls"])
-        L = - 1j * self.omega * self.rho0 * self.source_strength * ufl.conj(self.v) * self.ds(self.tags["Source"])
+        #a += 1j * self.k / self.floor_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Floor"])
+        #a += 1j * self.k / self.ceiling_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Ceiling"])
+        #a += 1j * self.k / self.wall_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Walls"])
+        #L = - 1j * self.omega * self.rho0 * self.source_strength * ufl.conj(self.v) * self.ds(self.tags["Source"])
+        L = - 1j * self.rho0 * self.source_strength * ufl.conj(self.v) * self.ds(self.tags["Source"])
         
         self.direct_problem = LinearProblem(
             a,
