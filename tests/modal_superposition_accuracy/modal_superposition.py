@@ -17,21 +17,33 @@ from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 THIS_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = THIS_DIR / "results"
 
-ROOMS_JSON = RESULTS_DIR / "single_square_many_configs.json"
+ROOMS_JSON = RESULTS_DIR / "single_controlled.json"
 
 
 # =========================================================
 # Config
 # =========================================================
 
+# Usar el mismo orden que en DirectSimulator.
+# Si DirectSimulator usa Lagrange 1, poné 1.
+# Si DirectSimulator usa Lagrange 2, poné 2.
 MODAL_ORDER = 2
-N_MODES = 160
-TARGET_FREQ = 140.0
-ZETA = 0.0001
+
+N_MODES = 300
+TARGET_FREQ = 100.0
+MODAL_TOL = 1e-8
+
+# Para comparar contra directo rígido sin damping, usar 0.
+ZETA = 0.005
+
+SOURCE_STRENGTH = 0.01
 
 FREQS = np.arange(20.0, 101.0, 2.0)
 
-RUN_LABEL = f"single_2_modal_order_{MODAL_ORDER}_ZETA_{ZETA}_2"
+RUN_LABEL = (
+    f"single_modal"
+    f"_ZETA_{ZETA}"
+)
 
 MODAL_RESULTS_DIR = RESULTS_DIR / RUN_LABEL
 MODAL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -75,10 +87,14 @@ def loadSummary():
     return {
         "status": "running",
         "run_label": RUN_LABEL,
+        "source_model": "point_source",
+        "mesh_strategy": "one_mesh_per_room_no_source",
         "modal_order": MODAL_ORDER,
-        "n_modes": N_MODES,
+        "n_modes_requested": N_MODES,
         "target_freq": TARGET_FREQ,
+        "modal_tol": MODAL_TOL,
         "zeta": ZETA,
+        "source_strength": SOURCE_STRENGTH,
         "freq_min": float(FREQS[0]),
         "freq_max": float(FREQS[-1]),
         "freq_step": float(FREQS[1] - FREQS[0]),
@@ -146,6 +162,21 @@ def computeSplFromTransfer(H):
     return 20.0 * np.log10(np.abs(H) + 1e-12)
 
 
+def updateSummaryCounts(summary):
+    nDone = sum(
+        1 for case in summary["cases"].values()
+        if case.get("status") == "ok"
+    )
+
+    nFailed = sum(
+        1 for case in summary["cases"].values()
+        if case.get("status") == "failed"
+    )
+
+    summary["n_done"] = nDone
+    summary["n_failed"] = nFailed
+
+
 # =========================================================
 # Modal por room
 # =========================================================
@@ -163,8 +194,9 @@ def runModalRoom(roomName, roomParams):
     roomStart = time.perf_counter()
 
     # -----------------------------------------------------
-    # Mesh sin fuente
+    # Mesh SIN fuente
     # -----------------------------------------------------
+
     meshStart = time.perf_counter()
 
     mesher = Mesher()
@@ -183,42 +215,51 @@ def runModalRoom(roomName, roomParams):
     # -----------------------------------------------------
     # Modal simulation
     # -----------------------------------------------------
+
     modalStart = time.perf_counter()
 
     modalSimulator = ModalSimulator()
     modalSimulator.room_name = modalRoomName
 
-    modalSimulator = ModalSimulator()
+    modalSimulator.loadMesh(meshPath)
+    modalSimulator.setup(order=MODAL_ORDER)
 
-    eigFreq, eigVector, nModes = modalSimulator.simulate(
-        mesh_path=meshPath,
-        order=MODAL_ORDER,
-        room_name=modalRoomName,
-        export=False,
+    modalSimulator.computeModalAnalysis(
+        target_freq=TARGET_FREQ,
+        n_modes=N_MODES,
+        tol=MODAL_TOL,
     )
 
-    print(len(eigFreq))
-    print(min(eigFreq))
-    print(max(eigFreq))
-    print(eigFreq[:10])
-    print(eigFreq[-10:])
+    modalSimulator.obtainModes()
+    sortModes(modalSimulator)
 
     modalTime = time.perf_counter() - modalStart
     totalRoomTime = time.perf_counter() - roomStart
 
     eigFreq = np.asarray(modalSimulator.eig_freq, dtype=float)
 
+    if len(eigFreq) == 0:
+        raise RuntimeError("No convergió ningún modo.")
+
     print(f"Converged modes: {len(eigFreq)}")
+    print(f"Min mode: {np.min(eigFreq):.6f} Hz")
+    print(f"Max mode: {np.max(eigFreq):.6f} Hz")
+    print(f"First modes: {eigFreq[:10]}")
+    print(f"Last modes: {eigFreq[-10:]}")
     print(f"Modal time: {modalTime:.2f} s")
     print(f"Total room time: {totalRoomTime:.2f} s", flush=True)
 
     np.savez_compressed(
         getRoomOutputPath(roomName),
         eig_freq=eigFreq,
-        mesh_path=str(meshPath),
+        mesh_path=np.asarray(str(meshPath)),
         modal_order=np.asarray(MODAL_ORDER),
         n_modes_requested=np.asarray(N_MODES),
+        n_modes_converged=np.asarray(len(eigFreq)),
         target_freq=np.asarray(TARGET_FREQ),
+        zeta=np.asarray(ZETA),
+        source_model=np.asarray("point_source"),
+        mesh_strategy=np.asarray("one_mesh_per_room_no_source"),
     )
 
     roomResult = {
@@ -227,7 +268,15 @@ def runModalRoom(roomName, roomParams):
         "modal_room_name": modalRoomName,
         "mesh_path": str(meshPath),
         "room_output_path": str(getRoomOutputPath(roomName)),
+        "modal_order": int(MODAL_ORDER),
+        "n_modes_requested": int(N_MODES),
         "n_modes_converged": int(len(eigFreq)),
+        "min_mode_hz": float(np.min(eigFreq)),
+        "max_mode_hz": float(np.max(eigFreq)),
+        "target_freq_hz": float(TARGET_FREQ),
+        "zeta": float(ZETA),
+        "source_model": "point_source",
+        "mesh_strategy": "one_mesh_per_room_no_source",
         "mesh_time_s": float(meshTime),
         "modal_time_s": float(modalTime),
         "total_room_time_s": float(totalRoomTime),
@@ -250,6 +299,10 @@ def runModalCase(modalSimulator, roomName, configName, config):
 
     caseStart = time.perf_counter()
 
+    # -----------------------------------------------------
+    # Cache de puntos
+    # -----------------------------------------------------
+
     cacheStart = time.perf_counter()
 
     cache = modalSimulator.buildPointCache(
@@ -259,6 +312,10 @@ def runModalCase(modalSimulator, roomName, configName, config):
 
     cacheTime = time.perf_counter() - cacheStart
 
+    # -----------------------------------------------------
+    # Transferencia modal rápida
+    # -----------------------------------------------------
+
     transferStart = time.perf_counter()
 
     H = modalSimulator.modalTransferFromCache(
@@ -266,6 +323,7 @@ def runModalCase(modalSimulator, roomName, configName, config):
         sourceIndex=0,
         freqs=FREQS,
         zeta=ZETA,
+        sourceStrength=SOURCE_STRENGTH,
     )
 
     transferTime = time.perf_counter() - transferStart
@@ -284,7 +342,14 @@ def runModalCase(modalSimulator, roomName, configName, config):
         source_position=np.asarray(sourcePos),
         mic_positions=np.asarray(micPositions),
         eig_freq=np.asarray(modalSimulator.eig_freq),
+        modal_order=np.asarray(MODAL_ORDER),
+        n_modes_requested=np.asarray(N_MODES),
+        n_modes_converged=np.asarray(len(modalSimulator.eig_freq)),
+        target_freq=np.asarray(TARGET_FREQ),
         zeta=np.asarray(ZETA),
+        source_strength=np.asarray(SOURCE_STRENGTH),
+        source_model=np.asarray("point_source"),
+        mesh_strategy=np.asarray("one_mesh_per_room_no_source"),
     )
 
     caseResult = {
@@ -297,6 +362,14 @@ def runModalCase(modalSimulator, roomName, configName, config):
         "mic_positions": [list(mic) for mic in micPositions],
         "n_freqs": int(len(FREQS)),
         "n_mics": int(np.asarray(splResponses).shape[0]),
+        "modal_order": int(MODAL_ORDER),
+        "n_modes_requested": int(N_MODES),
+        "n_modes_converged": int(len(modalSimulator.eig_freq)),
+        "target_freq_hz": float(TARGET_FREQ),
+        "zeta": float(ZETA),
+        "source_strength": float(SOURCE_STRENGTH),
+        "source_model": "point_source",
+        "mesh_strategy": "one_mesh_per_room_no_source",
         "cache_time_s": float(cacheTime),
         "transfer_time_s": float(transferTime),
         "total_case_time_s": float(totalCaseTime),
@@ -310,6 +383,8 @@ def runModalCase(modalSimulator, roomName, configName, config):
 # =========================================================
 
 def main():
+    checkDependencies()
+
     experimentRooms = loadJson(ROOMS_JSON)
     summary = loadSummary()
 
@@ -329,6 +404,16 @@ def main():
     print(f"Rooms: {len(experimentRooms)}")
     print(f"Results dir: {MODAL_RESULTS_DIR}")
     print(f"Summary path: {SUMMARY_PATH}")
+    print()
+    print("Config:")
+    print(f"  MODAL_ORDER: {MODAL_ORDER}")
+    print(f"  N_MODES: {N_MODES}")
+    print(f"  TARGET_FREQ: {TARGET_FREQ}")
+    print(f"  ZETA: {ZETA}")
+    print(f"  SOURCE_STRENGTH: {SOURCE_STRENGTH}")
+    print(f"  FREQS: {FREQS[0]}-{FREQS[-1]} Hz, step {FREQS[1] - FREQS[0]} Hz")
+    print(f"  Source model: point_source")
+    print(f"  Mesh strategy: one_mesh_per_room_no_source")
     print()
 
     globalStart = time.perf_counter()
@@ -386,6 +471,7 @@ def main():
                     "error": f"Modal room failed: {e}",
                 }
 
+            updateSummaryCounts(summary)
             saveJson(summary, SUMMARY_PATH)
             continue
 
@@ -425,38 +511,22 @@ def main():
                     "traceback": traceback.format_exc(),
                 }
 
-            nDone = sum(
-                1 for case in summary["cases"].values()
-                if case.get("status") == "ok"
-            )
-
-            nFailed = sum(
-                1 for case in summary["cases"].values()
-                if case.get("status") == "failed"
-            )
-
-            summary["n_done"] = nDone
-            summary["n_failed"] = nFailed
-
+            updateSummaryCounts(summary)
             saveJson(summary, SUMMARY_PATH)
 
-            print(f"Progress: ok={nDone}, failed={nFailed}, total={len(allCases)}", flush=True)
+            print(
+                f"Progress: ok={summary['n_done']}, "
+                f"failed={summary['n_failed']}, "
+                f"total={len(allCases)}",
+                flush=True,
+            )
 
     totalTime = time.perf_counter() - globalStart
 
     summary["status"] = "finished"
     summary["total_runtime_s"] = float(totalTime)
 
-    summary["n_done"] = sum(
-        1 for case in summary["cases"].values()
-        if case.get("status") == "ok"
-    )
-
-    summary["n_failed"] = sum(
-        1 for case in summary["cases"].values()
-        if case.get("status") == "failed"
-    )
-
+    updateSummaryCounts(summary)
     saveJson(summary, SUMMARY_PATH)
 
     print()

@@ -1,6 +1,7 @@
 import csv
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
@@ -15,8 +16,8 @@ from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
 THIS_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = THIS_DIR / "results"
 
-DIRECT_RUN_LABEL = "single_2_direct_order_1_2_no_Z"
-MODAL_RUN_LABEL = "single_2_modal_order_2_ZETA_0.0001_2"
+DIRECT_RUN_LABEL = "single_direct_1"
+MODAL_RUN_LABEL = "single_modal_ZETA_0.005"
 
 DIRECT_RESULTS_DIR = RESULTS_DIR / DIRECT_RUN_LABEL
 MODAL_RESULTS_DIR = RESULTS_DIR / MODAL_RUN_LABEL
@@ -36,19 +37,29 @@ COMPARISON_JSON = OUTPUT_DIR / "msfd_comparison_summary.json"
 
 def getBaseCaseName(npzPath):
     """
-    Convierte, por ejemplo:
+    Extrae el nombre base del caso hasta el token Cxxx.
 
-    room_04w_01_C1_direct_order_2.npz
-    room_04w_01_C1_modal_order_2.npz
+    Ejemplos:
+        single_C001_direct.npz
+        -> single_C001
 
-    en:
+        single_C001_single_modal_order_2_ZETA_0.01.npz
+        -> single_C001
 
-    room_04w_01_C1
+        single_square_5x5x3_C001_direct.npz
+        -> single_square_5x5x3_C001
+
+        room_04w_01_C1_direct_order_2.npz
+        -> room_04w_01_C1
     """
-    parts = npzPath.stem.split("_")
+    stem = npzPath.stem
 
-    # room_04w_01_C1_...
-    return "_".join(parts[:4])
+    match = re.match(r"^(.*?_C\d+)(?:_|$)", stem)
+
+    if match is None:
+        raise ValueError(f"No pude extraer base_case_name de: {npzPath.name}")
+
+    return match.group(1)
 
 
 def ensureReceiversByFreqs(splResponses, freqs):

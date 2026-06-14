@@ -9,13 +9,13 @@ import matplotlib.pyplot as plt
 # =============================================================================
 
 FILE_A = Path(
-    "tests/modal_superposition_accuracy/results/single_2_direct_order_1/"
-    "single_square_5x5x3_C001_direct.npz"
+    "tests/modal_superposition_accuracy/results/single_direct_1/"
+    "single_C001_direct.npz"
 )
 
 FILE_B = Path(
-    "tests/modal_superposition_accuracy/results/single_2_modal_order_2_ZETA_0.005/"
-    "single_square_5x5x3_C001_single_2_modal_order_2_ZETA_0.005.npz"
+    "tests/modal_superposition_accuracy/results/single_modal_ZETA_0.005/"
+    "single_C001_single_modal_ZETA_0.005.npz"
 )
 
 LABEL_A = "Directo"

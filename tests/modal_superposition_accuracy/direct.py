@@ -8,8 +8,6 @@ import numpy as np
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 
-
-
 # =========================================================
 # Paths
 # =========================================================
@@ -17,14 +15,14 @@ from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 THIS_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = THIS_DIR / "results"
 
-ROOMS_JSON = RESULTS_DIR / "single_square_many_configs.json"
+ROOMS_JSON = RESULTS_DIR / "single_controlled.json"
 
 # =========================================================
 # Config
 # =========================================================
 
 DIRECT_ORDER = 1
-RUN_LABEL = f"single_2_direct_order_{DIRECT_ORDER}_2_no_Z_no_omega"
+RUN_LABEL = f"single_direct_{DIRECT_ORDER}"
 
 DIRECT_RESULTS_DIR = RESULTS_DIR / RUN_LABEL
 DIRECT_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
