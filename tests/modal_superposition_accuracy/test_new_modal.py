@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import numpy as np
@@ -12,55 +13,100 @@ from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 # Configuración
 # =============================================================================
 
-ROOM_NAME = "rigid_same_mesh_surface_source"
+THIS_DIR = Path(__file__).resolve().parent
+RESULTS_DIR = THIS_DIR / "results"
 
-OUTPUT_DIR = Path(
-    "tests/modal_superposition_accuracy/results/rigid_same_mesh_surface_source_raw"
-)
+ROOMS_JSON = RESULTS_DIR / "single_square_fixed_source_many_mics.json"
+
+ROOM_KEY = "single"
+CONFIG_KEY = "C001"
+
+RUN_NAME = f"{ROOM_KEY}_{CONFIG_KEY}_same_mesh_surface_source"
+
+OUTPUT_DIR = RESULTS_DIR / RUN_NAME
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-FREQS = np.arange(20.0, 101.0, 2.0)
+FREQS = np.arange(20.0, 201.0, 1.0)
 
-# Usá el mismo orden que tu DirectSimulator.
-# Si DirectSimulator usa ("Lagrange", 1), dejá 1.
-# Si usa ("Lagrange", 2), cambiá esto a 2.
-FEM_ORDER = 1
+FEM_ORDER = 2
 
-N_MODES = 300
+N_MODES = 150
 TARGET_FREQ = 100.0
-ZETA = 0.0
+MODAL_TOL = 1e-8
+
+# Para comparación contra directo rígido sin impedancia:
+ZETA = 0.00
 
 SOURCE_STRENGTH = 0.01
 
-SOURCE_POSITION = [1.0, 0.8, 1.2]
 
-MIC_POSITIONS = [
-    [2.0, 2.0, 1.2],
-    [2.5, 2.0, 1.2],
-    [3.0, 2.0, 1.2],
-]
+# =============================================================================
+# JSON helpers
+# =============================================================================
 
-ROOM_PARAMS = {
-    "data": {
-        "vertices": {
-            "V1": [0.0, 0.0],
-            "V2": [5.0, 0.0],
-            "V3": [5.0, 4.0],
-            "V4": [0.0, 4.0],
-        },
-        "walls": {
-            "W1": 0.0,
-            "W2": 0.0,
-            "W3": 0.0,
-            "W4": 0.0,
-        },
-        "Z": 3.0,
+def loadJson(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def cleanRoomParams(roomParams):
+    data = roomParams["data"]
+
+    return {
+        "data": {
+            "vertices": data["vertices"],
+            "walls": data["walls"],
+            "Z": data["Z"],
+        }
     }
-}
+
+
+def getRoomSource(roomParams):
+    data = roomParams["data"]
+
+    if "source" not in data:
+        raise KeyError("No encontré data['source']. Este script espera fuente fija.")
+
+    return tuple(data["source"])
+
+
+def sortedMicPositions(config):
+    mics = config["mics"]
+
+    micKeys = sorted(
+        mics.keys(),
+        key=lambda key: int(key[1:])
+    )
+
+    return [
+        tuple(mics[micKey])
+        for micKey in micKeys
+    ]
+
+
+def loadSingleCase():
+    experimentRooms = loadJson(ROOMS_JSON)
+
+    if ROOM_KEY not in experimentRooms:
+        raise KeyError(f"No existe ROOM_KEY='{ROOM_KEY}' en {ROOMS_JSON}")
+
+    roomParams = experimentRooms[ROOM_KEY]
+    positionConfigs = roomParams["data"]["position_configs"]
+
+    if CONFIG_KEY not in positionConfigs:
+        raise KeyError(f"No existe CONFIG_KEY='{CONFIG_KEY}' en room '{ROOM_KEY}'")
+
+    config = positionConfigs[CONFIG_KEY]
+
+    sourcePosition = getRoomSource(roomParams)
+    micPositions = sortedMicPositions(config)
+    cleanParams = cleanRoomParams(roomParams)
+
+    return cleanParams, sourcePosition, micPositions
 
 
 # =============================================================================
-# Helpers
+# Helpers numéricos
 # =============================================================================
 
 def ensureMicsByFreqs(splResponses, freqs):
@@ -88,16 +134,6 @@ def ensureMicsByFreqs(splResponses, freqs):
     )
 
 
-def sortModes(modalSimulator):
-    pairs = sorted(
-        zip(modalSimulator.eig_freq, modalSimulator.eig_vector),
-        key=lambda pair: pair[0],
-    )
-
-    modalSimulator.eig_freq = [freq for freq, vec in pairs]
-    modalSimulator.eig_vector = [vec for freq, vec in pairs]
-
-
 def centerCurve(curve):
     curve = np.asarray(curve, dtype=float)
     return curve - np.mean(curve)
@@ -123,10 +159,10 @@ def saveMeanRawPlot(freqs, directSpl, modalSpl, outputPath):
 
     plt.figure(figsize=(10, 5))
     plt.plot(freqs, directMean, label="Directo rígido")
-    plt.plot(freqs, modalMean, label="Modal rígido - fuente superficial")
+    plt.plot(freqs, modalMean, label="Modal rígido - fuente superficial fija")
     plt.xlabel("Frecuencia [Hz]")
     plt.ylabel("Nivel [dB]")
-    plt.title("Respuesta promedio entre micrófonos")
+    plt.title(f"Respuesta promedio - {ROOM_KEY} {CONFIG_KEY}")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
@@ -146,7 +182,7 @@ def saveMeanCenteredPlot(freqs, directSpl, modalSpl, outputPath):
     plt.plot(freqs, modalCentered, label="Modal rígido centrado")
     plt.xlabel("Frecuencia [Hz]")
     plt.ylabel("Nivel relativo [dB]")
-    plt.title("Respuesta promedio centrada")
+    plt.title(f"Respuesta promedio centrada - {ROOM_KEY} {CONFIG_KEY}")
     plt.grid(True)
     plt.legend()
     plt.tight_layout()
@@ -180,7 +216,7 @@ def saveMicsCenteredPlot(freqs, directSpl, modalSpl, outputPath):
 
     plt.xlabel("Frecuencia [Hz]")
     plt.ylabel("Nivel relativo [dB]")
-    plt.title("Respuestas centradas por micrófono")
+    plt.title(f"Respuestas centradas por micrófono - {ROOM_KEY} {CONFIG_KEY}")
     plt.grid(True)
     plt.legend(ncols=2, fontsize=8)
     plt.tight_layout()
@@ -192,27 +228,28 @@ def saveMicsCenteredPlot(freqs, directSpl, modalSpl, outputPath):
 # Simulaciones
 # =============================================================================
 
-def createSharedMesh():
+def createSharedMesh(roomParams, sourcePosition):
     print()
     print("=" * 80)
-    print("Creando malla compartida con Source")
+    print("Creando malla compartida con Source fija")
     print("=" * 80)
 
     mesher = Mesher()
 
     meshPath = mesher.create(
-        ROOM_PARAMS,
-        room_name=ROOM_NAME,
+        roomParams,
+        room_name=RUN_NAME,
         visualize=False,
-        source_pos=SOURCE_POSITION,
+        source_pos=sourcePosition,
     )
 
     print(f"Shared mesh path: {meshPath}")
+    print(f"Source position: {sourcePosition}")
 
     return meshPath
 
 
-def runDirect(meshPath):
+def runDirect(meshPath, micPositions):
     print()
     print("=" * 80)
     print("Running direct rigid")
@@ -223,9 +260,9 @@ def runDirect(meshPath):
     directSimulator.freqs = FREQS
 
     freqs, splResponses = directSimulator.simulate(
-        mesh_path=meshPath,
-        mic_positions=MIC_POSITIONS,
-        room_name=f"{ROOM_NAME}_direct",
+        meshPath,
+        mic_positions=micPositions,
+        room_name=f"{RUN_NAME}_direct",
         export=False,
     )
 
@@ -234,10 +271,10 @@ def runDirect(meshPath):
     return np.asarray(freqs, dtype=float), splResponses
 
 
-def runModal(meshPath):
+def runModal(meshPath, micPositions):
     print()
     print("=" * 80)
-    print("Running modal rigid - same mesh / surface source")
+    print("Running modal rigid - same mesh / fixed surface source")
     print("=" * 80)
 
     print(f"FEM_ORDER: {FEM_ORDER}")
@@ -253,13 +290,16 @@ def runModal(meshPath):
     modalSimulator.computeModalAnalysis(
         target_freq=TARGET_FREQ,
         n_modes=N_MODES,
-        tol=1e-8,
+        tol=MODAL_TOL,
     )
 
     modalSimulator.obtainModes()
-    sortModes(modalSimulator)
+    modalSimulator.sortModes()
 
     eigFreq = np.asarray(modalSimulator.eig_freq, dtype=float)
+
+    if len(eigFreq) == 0:
+        raise RuntimeError("No convergió ningún modo.")
 
     print()
     print("Modos:")
@@ -269,16 +309,19 @@ def runModal(meshPath):
     print(f"  first modes: {eigFreq[:10]}")
     print(f"  last modes: {eigFreq[-10:]}")
 
-    H = modalSimulator.modalTransferFromSurfaceSource(
-        receiverPositions=MIC_POSITIONS,
+    sourceWeights = modalSimulator.computeSourceSurfaceWeights()
+
+    H = modalSimulator.modalTransferFromFixedSurfaceSource(
+        receiverPositions=micPositions,
         freqs=FREQS,
+        sourceWeights=sourceWeights,
         zeta=ZETA,
         sourceStrength=SOURCE_STRENGTH,
     )
 
     modalSpl = 20.0 * np.log10(np.abs(H) + 1e-12)
 
-    return np.asarray(FREQS, dtype=float), modalSpl, eigFreq
+    return np.asarray(FREQS, dtype=float), modalSpl, eigFreq, sourceWeights
 
 
 # =============================================================================
@@ -286,10 +329,32 @@ def runModal(meshPath):
 # =============================================================================
 
 def main():
-    meshPath = createSharedMesh()
+    roomParams, sourcePosition, micPositions = loadSingleCase()
 
-    directFreqs, directSpl = runDirect(meshPath)
-    modalFreqs, modalSpl, eigFreq = runModal(meshPath)
+    print()
+    print("=" * 80)
+    print("Single case modal superposition accuracy")
+    print("=" * 80)
+    print(f"ROOM_KEY: {ROOM_KEY}")
+    print(f"CONFIG_KEY: {CONFIG_KEY}")
+    print(f"SOURCE: {sourcePosition}")
+    print(f"MICS: {micPositions}")
+    print(f"OUTPUT_DIR: {OUTPUT_DIR}")
+
+    meshPath = createSharedMesh(
+        roomParams=roomParams,
+        sourcePosition=sourcePosition,
+    )
+
+    directFreqs, directSpl = runDirect(
+        meshPath=meshPath,
+        micPositions=micPositions,
+    )
+
+    modalFreqs, modalSpl, eigFreq, sourceWeights = runModal(
+        meshPath=meshPath,
+        micPositions=micPositions,
+    )
 
     if not np.allclose(directFreqs, modalFreqs):
         raise ValueError("Las frecuencias de directo y modal no coinciden.")
@@ -305,7 +370,7 @@ def main():
 
     print()
     print("=" * 80)
-    print("Resultados comparación raw")
+    print("Resultados comparación")
     print("=" * 80)
     print(f"Mesh compartida: {meshPath}")
     print(f"Direct SPL shape: {directSpl.shape}")
@@ -332,13 +397,21 @@ def main():
         )
 
     np.savez_compressed(
-        OUTPUT_DIR / "rigid_same_mesh_surface_source_raw_results.npz",
+        OUTPUT_DIR / f"{RUN_NAME}_results.npz",
         freqs=np.asarray(directFreqs),
         direct_spl=np.asarray(directSpl),
         modal_spl=np.asarray(modalSpl),
         eig_freq=np.asarray(eigFreq),
-        source_position=np.asarray(SOURCE_POSITION),
-        mic_positions=np.asarray(MIC_POSITIONS),
+        source_weights=np.asarray(sourceWeights),
+        source_position=np.asarray(sourcePosition),
+        mic_positions=np.asarray(micPositions),
+        room_key=np.asarray(ROOM_KEY),
+        config_key=np.asarray(CONFIG_KEY),
+        fem_order=np.asarray(FEM_ORDER),
+        n_modes=np.asarray(N_MODES),
+        target_freq=np.asarray(TARGET_FREQ),
+        zeta=np.asarray(ZETA),
+        source_strength=np.asarray(SOURCE_STRENGTH),
     )
 
     saveMeanRawPlot(

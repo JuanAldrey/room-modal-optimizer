@@ -16,8 +16,8 @@ from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
 THIS_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = THIS_DIR / "results"
 
-DIRECT_RUN_LABEL = "single_direct_1"
-MODAL_RUN_LABEL = "single_modal_ZETA_0.005"
+DIRECT_RUN_LABEL = "direct_1"
+MODAL_RUN_LABEL = "modal_0.03"
 
 DIRECT_RESULTS_DIR = RESULTS_DIR / DIRECT_RUN_LABEL
 MODAL_RESULTS_DIR = RESULTS_DIR / MODAL_RUN_LABEL

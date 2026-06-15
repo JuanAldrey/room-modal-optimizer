@@ -1,6 +1,5 @@
 import json
 import time
-import shutil
 import traceback
 from pathlib import Path
 
@@ -17,33 +16,26 @@ from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 THIS_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = THIS_DIR / "results"
 
-ROOMS_JSON = RESULTS_DIR / "single_controlled.json"
-
-
 # =========================================================
 # Config
 # =========================================================
 
-# Usar el mismo orden que en DirectSimulator.
-# Si DirectSimulator usa Lagrange 1, poné 1.
-# Si DirectSimulator usa Lagrange 2, poné 2.
+# Usar el mismo orden que en DirectSimulator para comparar.
+ROOMS_JSON = RESULTS_DIR / "single_square_fixed_source_many_mics.json"
+
 MODAL_ORDER = 2
 
-N_MODES = 300
+N_MODES = 150
 TARGET_FREQ = 100.0
 MODAL_TOL = 1e-8
-
-# Para comparar contra directo rígido sin damping, usar 0.
-ZETA = 0.005
+#0.005
+ZETA = 0.01
 
 SOURCE_STRENGTH = 0.01
 
-FREQS = np.arange(20.0, 101.0, 2.0)
+FREQS = np.arange(20.0, 201.0, 1.0)
 
-RUN_LABEL = (
-    f"single_modal"
-    f"_ZETA_{ZETA}"
-)
+RUN_LABEL = f"modal_{ZETA}"
 
 MODAL_RESULTS_DIR = RESULTS_DIR / RUN_LABEL
 MODAL_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,13 +48,6 @@ SKIP_COMPLETED = True
 # =========================================================
 # Helpers
 # =========================================================
-
-def checkDependencies():
-    if shutil.which("gcc") is None:
-        raise RuntimeError(
-            "No se encontró gcc. Instalalo con: sudo apt install build-essential"
-        )
-
 
 def loadJson(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -87,8 +72,8 @@ def loadSummary():
     return {
         "status": "running",
         "run_label": RUN_LABEL,
-        "source_model": "point_source",
-        "mesh_strategy": "one_mesh_per_room_no_source",
+        "source_model": "fixed_surface_source",
+        "mesh_strategy": "one_mesh_per_room_with_fixed_source",
         "modal_order": MODAL_ORDER,
         "n_modes_requested": N_MODES,
         "target_freq": TARGET_FREQ,
@@ -107,6 +92,10 @@ def loadSummary():
 
 
 def cleanRoomParams(roomParams):
+    """
+    El Mesher solo necesita vertices, walls y Z.
+    Sacamos source y position_configs para no pasarle campos extra.
+    """
     data = roomParams["data"]
 
     return {
@@ -116,6 +105,44 @@ def cleanRoomParams(roomParams):
             "Z": data["Z"],
         }
     }
+
+
+def getRoomSource(roomParams):
+    """
+    Fuente fija a nivel de room.
+
+    Formato recomendado:
+        roomParams["data"]["source"]
+
+    Fallback:
+        si no existe, toma la fuente del primer config.
+        Esto sirve para no romper JSONs viejos.
+    """
+    data = roomParams["data"]
+
+    if "source" in data:
+        return tuple(data["source"])
+
+    positionConfigs = data["position_configs"]
+
+    firstConfig = next(iter(positionConfigs.values()))
+
+    if "source" not in firstConfig:
+        raise KeyError(
+            "No encontré fuente fija. Agregá data['source'] "
+            "o source dentro de cada config."
+        )
+
+    sourcePos = tuple(firstConfig["source"])
+
+    for configName, config in positionConfigs.items():
+        if tuple(config.get("source", sourcePos)) != sourcePos:
+            raise ValueError(
+                "Este script asume fuente fija. "
+                f"Pero la config {configName} tiene otra source."
+            )
+
+    return sourcePos
 
 
 def sortedMicPositions(config):
@@ -133,29 +160,19 @@ def sortedMicPositions(config):
 
 
 def getRoomModalName(roomName):
-    return f"{roomName}_{RUN_LABEL}"
+    return f"{roomName}_modal_fixed_source"
 
 
 def getCaseName(roomName, configName):
-    return f"{roomName}_{configName}_{RUN_LABEL}"
+    return f"{roomName}_{configName}_modal"
+
+
+def getRoomOutputPath(roomName):
+    return MODAL_RESULTS_DIR / f"{getRoomModalName(roomName)}.npz"
 
 
 def getCaseOutputPath(caseName):
     return MODAL_RESULTS_DIR / f"{caseName}.npz"
-
-
-def getRoomOutputPath(roomName):
-    return MODAL_RESULTS_DIR / f"{getRoomModalName(roomName)}_room_modal.npz"
-
-
-def sortModes(modalSimulator):
-    pairs = sorted(
-        zip(modalSimulator.eig_freq, modalSimulator.eig_vector),
-        key=lambda x: x[0]
-    )
-
-    modalSimulator.eig_freq = [freq for freq, vec in pairs]
-    modalSimulator.eig_vector = [vec for freq, vec in pairs]
 
 
 def computeSplFromTransfer(H):
@@ -190,11 +207,12 @@ def runModalRoom(roomName, roomParams):
     print("=" * 80, flush=True)
 
     cleanParams = cleanRoomParams(roomParams)
+    sourcePos = getRoomSource(roomParams)
 
     roomStart = time.perf_counter()
 
     # -----------------------------------------------------
-    # Mesh SIN fuente
+    # Mesh con fuente fija
     # -----------------------------------------------------
 
     meshStart = time.perf_counter()
@@ -205,12 +223,14 @@ def runModalRoom(roomName, roomParams):
         cleanParams,
         room_name=modalRoomName,
         visualize=False,
+        source_pos=sourcePos,
     )
 
     meshTime = time.perf_counter() - meshStart
 
     print(f"Mesh ready: {meshPath}")
     print(f"Mesh time: {meshTime:.2f} s", flush=True)
+    print(f"Fixed source: {sourcePos}", flush=True)
 
     # -----------------------------------------------------
     # Modal simulation
@@ -231,10 +251,9 @@ def runModalRoom(roomName, roomParams):
     )
 
     modalSimulator.obtainModes()
-    sortModes(modalSimulator)
+    modalSimulator.sortModes()
 
     modalTime = time.perf_counter() - modalStart
-    totalRoomTime = time.perf_counter() - roomStart
 
     eigFreq = np.asarray(modalSimulator.eig_freq, dtype=float)
 
@@ -246,20 +265,43 @@ def runModalRoom(roomName, roomParams):
     print(f"Max mode: {np.max(eigFreq):.6f} Hz")
     print(f"First modes: {eigFreq[:10]}")
     print(f"Last modes: {eigFreq[-10:]}")
-    print(f"Modal time: {modalTime:.2f} s")
+    print(f"Modal time: {modalTime:.2f} s", flush=True)
+
+    # -----------------------------------------------------
+    # Proyección modal de la fuente fija
+    # -----------------------------------------------------
+
+    sourceProjectionStart = time.perf_counter()
+
+    sourceWeights = modalSimulator.computeSourceSurfaceWeights()
+
+    sourceProjectionTime = time.perf_counter() - sourceProjectionStart
+
+    totalRoomTime = time.perf_counter() - roomStart
+
+    print(f"Source projection time: {sourceProjectionTime:.2f} s")
     print(f"Total room time: {totalRoomTime:.2f} s", flush=True)
 
+    # -----------------------------------------------------
+    # Save room result
+    # -----------------------------------------------------
+
+    roomOutputPath = getRoomOutputPath(roomName)
+
     np.savez_compressed(
-        getRoomOutputPath(roomName),
+        roomOutputPath,
         eig_freq=eigFreq,
+        source_weights=np.asarray(sourceWeights),
+        source_position=np.asarray(sourcePos),
         mesh_path=np.asarray(str(meshPath)),
         modal_order=np.asarray(MODAL_ORDER),
         n_modes_requested=np.asarray(N_MODES),
         n_modes_converged=np.asarray(len(eigFreq)),
         target_freq=np.asarray(TARGET_FREQ),
         zeta=np.asarray(ZETA),
-        source_model=np.asarray("point_source"),
-        mesh_strategy=np.asarray("one_mesh_per_room_no_source"),
+        source_strength=np.asarray(SOURCE_STRENGTH),
+        source_model=np.asarray("fixed_surface_source"),
+        mesh_strategy=np.asarray("one_mesh_per_room_with_fixed_source"),
     )
 
     roomResult = {
@@ -267,7 +309,8 @@ def runModalRoom(roomName, roomParams):
         "room_name": roomName,
         "modal_room_name": modalRoomName,
         "mesh_path": str(meshPath),
-        "room_output_path": str(getRoomOutputPath(roomName)),
+        "room_output_path": str(roomOutputPath),
+        "source_position": list(sourcePos),
         "modal_order": int(MODAL_ORDER),
         "n_modes_requested": int(N_MODES),
         "n_modes_converged": int(len(eigFreq)),
@@ -275,62 +318,66 @@ def runModalRoom(roomName, roomParams):
         "max_mode_hz": float(np.max(eigFreq)),
         "target_freq_hz": float(TARGET_FREQ),
         "zeta": float(ZETA),
-        "source_model": "point_source",
-        "mesh_strategy": "one_mesh_per_room_no_source",
+        "source_strength": float(SOURCE_STRENGTH),
+        "source_model": "fixed_surface_source",
+        "mesh_strategy": "one_mesh_per_room_with_fixed_source",
         "mesh_time_s": float(meshTime),
         "modal_time_s": float(modalTime),
+        "source_projection_time_s": float(sourceProjectionTime),
         "total_room_time_s": float(totalRoomTime),
     }
 
-    return modalSimulator, roomResult
+    return modalSimulator, sourceWeights, sourcePos, roomResult
 
 
 # =========================================================
 # Modal por config
 # =========================================================
 
-def runModalCase(modalSimulator, roomName, configName, config):
+def runModalCase(
+    modalSimulator,
+    sourceWeights,
+    sourcePos,
+    roomName,
+    configName,
+    config,
+):
     caseName = getCaseName(roomName, configName)
 
-    print(f"Running modal case: {caseName}", flush=True)
+    print()
+    print("=" * 80)
+    print(f"Running case: {caseName}")
+    print("=" * 80, flush=True)
 
-    sourcePos = tuple(config["source"])
     micPositions = sortedMicPositions(config)
 
     caseStart = time.perf_counter()
 
     # -----------------------------------------------------
-    # Cache de puntos
-    # -----------------------------------------------------
-
-    cacheStart = time.perf_counter()
-
-    cache = modalSimulator.buildPointCache(
-        sourcePositions=[sourcePos],
-        receiverPositions=micPositions,
-    )
-
-    cacheTime = time.perf_counter() - cacheStart
-
-    # -----------------------------------------------------
-    # Transferencia modal rápida
+    # Modal transfer con fuente superficial fija
     # -----------------------------------------------------
 
     transferStart = time.perf_counter()
 
-    H = modalSimulator.modalTransferFromCache(
-        cache=cache,
-        sourceIndex=0,
+    H = modalSimulator.modalTransferFromFixedSurfaceSource(
+        receiverPositions=micPositions,
         freqs=FREQS,
+        sourceWeights=sourceWeights,
         zeta=ZETA,
         sourceStrength=SOURCE_STRENGTH,
     )
 
     transferTime = time.perf_counter() - transferStart
+    totalTime = time.perf_counter() - caseStart
 
     splResponses = computeSplFromTransfer(H)
 
-    totalCaseTime = time.perf_counter() - caseStart
+    print(f"Transfer time: {transferTime:.2f} s")
+    print(f"Total case time: {totalTime:.2f} s", flush=True)
+
+    # -----------------------------------------------------
+    # Save result
+    # -----------------------------------------------------
 
     outputPath = getCaseOutputPath(caseName)
 
@@ -342,14 +389,15 @@ def runModalCase(modalSimulator, roomName, configName, config):
         source_position=np.asarray(sourcePos),
         mic_positions=np.asarray(micPositions),
         eig_freq=np.asarray(modalSimulator.eig_freq),
+        source_weights=np.asarray(sourceWeights),
         modal_order=np.asarray(MODAL_ORDER),
         n_modes_requested=np.asarray(N_MODES),
         n_modes_converged=np.asarray(len(modalSimulator.eig_freq)),
         target_freq=np.asarray(TARGET_FREQ),
         zeta=np.asarray(ZETA),
         source_strength=np.asarray(SOURCE_STRENGTH),
-        source_model=np.asarray("point_source"),
-        mesh_strategy=np.asarray("one_mesh_per_room_no_source"),
+        source_model=np.asarray("fixed_surface_source"),
+        mesh_strategy=np.asarray("one_mesh_per_room_with_fixed_source"),
     )
 
     caseResult = {
@@ -368,11 +416,10 @@ def runModalCase(modalSimulator, roomName, configName, config):
         "target_freq_hz": float(TARGET_FREQ),
         "zeta": float(ZETA),
         "source_strength": float(SOURCE_STRENGTH),
-        "source_model": "point_source",
-        "mesh_strategy": "one_mesh_per_room_no_source",
-        "cache_time_s": float(cacheTime),
+        "source_model": "fixed_surface_source",
+        "mesh_strategy": "one_mesh_per_room_with_fixed_source",
         "transfer_time_s": float(transferTime),
-        "total_case_time_s": float(totalCaseTime),
+        "total_time_s": float(totalTime),
     }
 
     return caseResult
@@ -383,8 +430,6 @@ def runModalCase(modalSimulator, roomName, configName, config):
 # =========================================================
 
 def main():
-    checkDependencies()
-
     experimentRooms = loadJson(ROOMS_JSON)
     summary = loadSummary()
 
@@ -395,7 +440,7 @@ def main():
 
         for configName, config in positionConfigs.items():
             caseName = getCaseName(roomName, configName)
-            allCases.append((caseName, roomName, configName, config))
+            allCases.append((caseName, roomName, roomParams, configName, config))
 
     summary["n_total"] = len(allCases)
     saveJson(summary, SUMMARY_PATH)
@@ -412,8 +457,8 @@ def main():
     print(f"  ZETA: {ZETA}")
     print(f"  SOURCE_STRENGTH: {SOURCE_STRENGTH}")
     print(f"  FREQS: {FREQS[0]}-{FREQS[-1]} Hz, step {FREQS[1] - FREQS[0]} Hz")
-    print(f"  Source model: point_source")
-    print(f"  Mesh strategy: one_mesh_per_room_no_source")
+    print(f"  Source model: fixed_surface_source")
+    print(f"  Mesh strategy: one_mesh_per_room_with_fixed_source")
     print()
 
     globalStart = time.perf_counter()
@@ -443,7 +488,7 @@ def main():
             continue
 
         try:
-            modalSimulator, roomResult = runModalRoom(
+            modalSimulator, sourceWeights, sourcePos, roomResult = runModalRoom(
                 roomName=roomName,
                 roomParams=roomParams,
             )
@@ -492,6 +537,8 @@ def main():
             try:
                 caseResult = runModalCase(
                     modalSimulator=modalSimulator,
+                    sourceWeights=sourceWeights,
+                    sourcePos=sourcePos,
                     roomName=roomName,
                     configName=configName,
                     config=config,

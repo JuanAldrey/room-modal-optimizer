@@ -13,6 +13,8 @@ class ModalSimulator:
         # Mesh / geometry
         self.domain = None
         self.facet_tags = None
+        self.tags = None
+        self.ds = None
 
         # FEM
         self.V = None
@@ -84,6 +86,21 @@ class ModalSimulator:
 
         self.domain = mesh_data.mesh
         self.facet_tags = mesh_data.facet_tags
+
+        if self.facet_tags is not None:
+            self.tags = {
+                name: tag
+                for name, (dim, tag) in mesh_data.physical_groups.items()
+            }
+
+            self.ds = ufl.Measure(
+                "ds",
+                domain=self.domain,
+                subdomain_data=self.facet_tags,
+            )
+        else:
+            self.tags = {}
+            self.ds = None
 
     def setup(self, order):
         self.V = fem.functionspace(self.domain, ("Lagrange", order))
@@ -256,33 +273,61 @@ class ModalSimulator:
         values = function.eval(localPoints, localCells)
 
         return np.asarray(values).reshape(-1)
+    
+    def computeSourceSurfaceWeights(self):
+        if self.tags is None or "Source" not in self.tags:
+            raise RuntimeError("La malla no tiene physical group 'Source'.")
 
-    # =========================================================
-    # Cache modal para batch
-    # =========================================================
+        modeFunction = fem.Function(self.V)
 
-    def buildPointCache(self, sourcePositions, receiverPositions):
-        """
-        Evalúa todos los modos en fuentes y receptores.
+        sourceForm = fem.form(
+            modeFunction * self.ds(self.tags["Source"])
+        )
 
-        Esta es la parte que permite hacer batch:
-            una vez calculados los modos del recinto,
-            se pueden evaluar muchas combinaciones fuente/mics.
-        """
-        if self.eig_vector is None or len(self.eig_vector) == 0:
-            raise RuntimeError("No hay modos calculados. Ejecutar primero simulate().")
+        sourceWeights = []
 
-        sourcePositions = np.asarray(sourcePositions, dtype=float).reshape(-1, 3)
+        for modeVec in self.eig_vector:
+            modeFunction.x.array[:] = modeVec
+            modeFunction.x.scatter_forward()
+
+            localValue = fem.assemble_scalar(sourceForm)
+
+            totalValue = self.domain.comm.allreduce(
+                localValue,
+                op=MPI.SUM,
+            )
+
+            sourceWeights.append(totalValue)
+
+        return np.asarray(sourceWeights, dtype=complex)
+    
+    def modalTransferFromFixedSurfaceSource(
+        self,
+        receiverPositions,
+        freqs,
+        sourceWeights,
+        zeta=0.0,
+        sourceStrength=0.01,
+    ):
+        if self.eig_freq is None or len(self.eig_freq) == 0:
+            raise RuntimeError("No hay frecuencias modales calculadas.")
+
         receiverPositions = np.asarray(receiverPositions, dtype=float).reshape(-1, 3)
+        freqs = np.asarray(freqs, dtype=float)
+        sourceWeights = np.asarray(sourceWeights, dtype=complex)
 
-        nSources = sourcePositions.shape[0]
+        eigFreq = np.asarray(self.eig_freq, dtype=float)
+
+        kN = 2.0 * np.pi * eigFreq / self.c
+        k = 2.0 * np.pi * freqs / self.c
+        omega = 2.0 * np.pi * freqs
+
+        localCells, localPoints = self.computeLocalPoints(receiverPositions)
+
+        nReceivers = receiverPositions.shape[0]
         nModes = len(self.eig_vector)
 
-        allPoints = np.vstack([sourcePositions, receiverPositions])
-
-        localCells, localPoints = self.computeLocalPoints(allPoints)
-
-        phiAll = np.zeros((allPoints.shape[0], nModes), dtype=float)
+        phiReceivers = np.zeros((nReceivers, nModes), dtype=float)
 
         for modeIdx, modeVec in enumerate(self.eig_vector):
             modeFunction = self.modeFunctionFromVector(modeVec)
@@ -293,59 +338,7 @@ class ModalSimulator:
                 localCells=localCells,
             )
 
-            phiAll[:, modeIdx] = np.real(values)
-
-        phiSources = phiAll[:nSources, :]
-        phiReceivers = phiAll[nSources:, :]
-
-        return {
-            "phi_sources": phiSources,
-            "phi_receivers": phiReceivers,
-            "source_positions": sourcePositions,
-            "receiver_positions": receiverPositions,
-        }
-
-    # =========================================================
-    # Transferencia modal rápida
-    # =========================================================
-
-    def modalTransferFromCache(
-        self,
-        cache,
-        sourceIndex,
-        freqs,
-        zeta=0.0,
-        sourceStrength=0.01,
-    ):
-        """
-        Superposición modal rápida con fuente puntual.
-
-        Modelo aproximado:
-            fuente puntual idealizada en sourcePositions[sourceIndex]
-
-        Ventaja:
-            no requiere mallar la fuente
-            no recalcula modos por cada posición de fuente
-            sirve para batch/optimización
-
-        Forma:
-            p(r, f) = Σ phi_n(r) phi_n(xs) (-iωρ0Q)
-                      / (k_n² - k² + i 2 zeta k_n k)
-        """
-        if self.eig_freq is None or len(self.eig_freq) == 0:
-            raise RuntimeError("No hay frecuencias modales calculadas.")
-
-        eigFreq = np.asarray(self.eig_freq, dtype=float)
-        freqs = np.asarray(freqs, dtype=float)
-
-        phiSources = cache["phi_sources"]
-        phiReceivers = cache["phi_receivers"]
-
-        phiSource = phiSources[sourceIndex, :]
-
-        kN = 2.0 * np.pi * eigFreq / self.c
-        k = 2.0 * np.pi * freqs / self.c
-        omega = 2.0 * np.pi * freqs
+            phiReceivers[:, modeIdx] = np.real(values)
 
         denominator = (
             kN[:, None] ** 2
@@ -353,34 +346,10 @@ class ModalSimulator:
             + 1j * 2.0 * zeta * kN[:, None] * k[None, :]
         )
 
-        modalWeights = phiReceivers * phiSource[None, :]
+        modalWeights = phiReceivers * sourceWeights[None, :]
 
         H = modalWeights @ (1.0 / denominator)
 
         H = H * (-1j * omega[None, :] * self.rho0 * sourceStrength)
 
         return H
-
-    def modalTransferMultiSourceFromCache(
-        self,
-        cache,
-        freqs,
-        zeta=0.0,
-        sourceStrength=0.01,
-    ):
-        nSources = cache["phi_sources"].shape[0]
-
-        responses = []
-
-        for sourceIndex in range(nSources):
-            H = self.modalTransferFromCache(
-                cache=cache,
-                sourceIndex=sourceIndex,
-                freqs=freqs,
-                zeta=zeta,
-                sourceStrength=sourceStrength,
-            )
-
-            responses.append(H)
-
-        return np.asarray(responses)
