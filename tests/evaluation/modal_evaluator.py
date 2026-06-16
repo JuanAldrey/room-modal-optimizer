@@ -1,6 +1,6 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
-from room_modal_optimizer.evaluation.modal_evaluator import Evaluator
+from room_modal_optimizer.evaluation.evaluator import Evaluator
 
 room_name = 'testing_non_rectangular_6_4_3_4'
 params = {

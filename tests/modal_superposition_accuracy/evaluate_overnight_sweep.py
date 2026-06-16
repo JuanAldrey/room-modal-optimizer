@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
+from room_modal_optimizer.evaluation.evaluator import ModalEvaluator
 
 
 # =========================================================

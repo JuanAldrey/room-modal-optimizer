@@ -28,6 +28,7 @@ class ModalSimulator:
         self.eig_vector = []
         self.eig_freq = []
         self.n_modes = None
+        self.source_weights = None
 
         # Physical constants
         self.rho0 = 1.225
@@ -49,8 +50,9 @@ class ModalSimulator:
         n_modes=160,
         tol=1e-8,
     ):
-        self.room_name = room_name
+        self.reset()
 
+        self.room_name = room_name
         self.loadMesh(mesh_path)
         self.setup(order)
 
@@ -63,12 +65,14 @@ class ModalSimulator:
         self.obtainModes()
         self.sortModes()
 
-        if len(self.eig_freq) > 0:
-            print("min eig freq:", min(self.eig_freq))
-            print("max eig freq:", max(self.eig_freq))
-            print("n eig freq:", len(self.eig_freq))
+        self.source_weights = self.computeSourceSurfaceWeights()
 
-        return self.eig_freq, self.eig_vector, self.n_modes
+        return {
+            "eig_freq": self.eig_freq,
+            "eig_vector": self.eig_vector,
+            "n_modes": self.n_modes,
+            "source_weights": self.source_weights,
+        }
 
     # =========================================================
     # Mesh / FEM setup
@@ -126,7 +130,7 @@ class ModalSimulator:
     # Modal analysis
     # =========================================================
 
-    def computeModalAnalysis(self, target_freq=50.0, n_modes=160, tol=1e-8):
+    def computeModalAnalysis(self, target_freq=100.0, n_modes=160, tol=1e-8):
         self.n_modes = n_modes
 
         sigma = (2.0 * np.pi * target_freq / self.c) ** 2
@@ -353,3 +357,29 @@ class ModalSimulator:
         H = H * (-1j * omega[None, :] * self.rho0 * sourceStrength)
 
         return H
+    
+    def reset(self):
+        # Mesh / geometry
+        self.domain = None
+        self.facet_tags = None
+        self.tags = None
+        self.ds = None
+
+        # FEM
+        self.V = None
+        self.p = None
+        self.v = None
+
+        # FEM - Modal
+        self.K = None
+        self.M = None
+        self.modal_problem = None
+        self.eig_vector = []
+        self.eig_freq = []
+        self.n_modes = None
+
+        # Source
+        self.source_weights = None
+
+        # Room name
+        self.room_name = None

@@ -24,19 +24,13 @@ class DirectSimulator:
         self.p_a = None
 
         # Frequency data
-        self.freqs = np.arange(20, 201, 1)
+        self.freqs = np.arange(20, 201, 2)
         self.pressure_response = None
         self.spl_response = None
 
         # Physical constants
         self.rho0 = 1.225
         self.c = 343.0
-        
-        # Impedance values
-        self.use_impedance = False
-        self.wall_z_value = 25.0 + 0j
-        self.floor_z_value = 25.0 + 0j
-        self.ceiling_z_value = 25.0 + 0j
 
         # Runtime parameters
         self.k = None
@@ -49,7 +43,7 @@ class DirectSimulator:
         # Room name
         self.room_name = None
 
-    def simulate(self, mesh_path, mic_positions, room_name='room', freqs=None, use_impedance=False, wall_z=25.0 + 0j, floor_z=25.0 + 0j, ceiling_z=25.0 + 0j):
+    def simulate(self, mesh_path, mic_positions, room_name='room', freqs=None, use_impedance=True, wall_z=25.0 + 0j, floor_z=25.0 + 0j, ceiling_z=25.0 + 0j):
         self.room_name = room_name
         self.use_impedance = use_impedance
         if freqs is not None:
@@ -64,6 +58,11 @@ class DirectSimulator:
         self.setupVariationalFormulation()
         self.computeFrequencyResponse()
         self.pressureToSpl()
+
+        splResponse = np.asarray(self.spl_response)
+
+        if splResponse.shape[0] == len(self.freqs):
+            splResponse = splResponse.T
     
         return self.freqs, self.spl_response
         

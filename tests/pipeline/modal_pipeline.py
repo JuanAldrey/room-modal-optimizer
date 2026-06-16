@@ -1,7 +1,7 @@
-from room_modal_optimizer.pipeline.modal_pipeline import ModalPipeline
+from room_modal_optimizer.pipeline.pipeline import ModalPipeline
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
-from room_modal_optimizer.evaluation.modal_evaluator import ModalEvaluator
+from room_modal_optimizer.evaluation.evaluator import ModalEvaluator
 
 room_name = 'testing_pipeline'
 params = {

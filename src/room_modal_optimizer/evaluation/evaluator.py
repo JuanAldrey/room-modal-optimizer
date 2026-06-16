@@ -1,30 +1,6 @@
 import numpy as np
 
-
-class ModalEvaluator:
-
-    @staticmethod
-    def evaluate(f_modes, n):
-        """
-        Frequency Spacing Index según Rindel.
-
-        Inputs:
-            - f_modes: array type object. Modes frequencies vector.
-            - n: int type object. Max mode to evaluate.
-        """
-
-        f = np.asarray(f_modes, dtype=float)[:n]
-
-        if len(f) < 2:
-            raise ValueError("Se necesitan al menos 2 modos para calcular el FSI.")
-
-        avg_frq_sp = (f[-1] - f[0]) / (n - 1)
-        dif_nhb_modes = np.diff(f)
-        sum_arg = (dif_nhb_modes / avg_frq_sp) ** 2
-        frq_sp_idx = (1 / (n - 1)) * np.sum(sum_arg, axis=0)
-
-        return float(frq_sp_idx)
-
+class Evaluator:
     @staticmethod
     def pressure_to_db(response, eps=1e-12):
         """
@@ -134,10 +110,10 @@ class ModalEvaluator:
         if input_is_db:
             response_db = np.asarray(response, dtype=float)
         else:
-            response_db = ModalEvaluator.pressure_to_db(response, eps=eps)
+            response_db = Evaluator.pressure_to_db(response, eps=eps)
 
-        md = ModalEvaluator.magnitude_deviation(response_db)
-        sd = ModalEvaluator.spatial_deviation(response_db)
+        md = Evaluator.magnitude_deviation(response_db)
+        sd = Evaluator.spatial_deviation(response_db)
 
         msfd = weight_magnitude * md + weight_spatial * sd
 
@@ -145,58 +121,6 @@ class ModalEvaluator:
             "MSFD": float(msfd),
             "MD": float(md),
             "SD": float(sd),
-            "weight_magnitude": float(weight_magnitude),
-            "weight_spatial": float(weight_spatial),
-        }
-
-    @staticmethod
-    def evaluate_geometry_merit(
-        f_modes,
-        response,
-        n_modes=25,
-        input_is_db=False,
-        weight_rindel=1.0,
-        weight_msfd=1.0,
-        weight_magnitude=0.5,
-        weight_spatial=0.5,
-        eps=1e-12,
-    ):
-        """
-        Figura de mérito combinada para evaluación geométrica.
-
-        Combina:
-            - Penalización de Rindel: abs(FSI - 1)
-            - MSFD calculado sobre respuesta modal aproximada
-
-        Ojo: en una etapa posterior conviene normalizar ambas magnitudes
-        antes de combinarlas, porque no necesariamente tienen la misma escala.
-        """
-
-        fsi = ModalEvaluator.evaluate(f_modes, n_modes)
-        rindel_penalty = abs(fsi - 1.0)
-
-        msfd_result = ModalEvaluator.evaluate_msfd(
-            response=response,
-            input_is_db=input_is_db,
-            weight_magnitude=weight_magnitude,
-            weight_spatial=weight_spatial,
-            eps=eps,
-        )
-
-        merit = (
-            weight_rindel * rindel_penalty
-            + weight_msfd * msfd_result["MSFD"]
-        )
-
-        return {
-            "merit": float(merit),
-            "FSI": float(fsi),
-            "rindel_penalty": float(rindel_penalty),
-            "MSFD": msfd_result["MSFD"],
-            "MD": msfd_result["MD"],
-            "SD": msfd_result["SD"],
-            "weight_rindel": float(weight_rindel),
-            "weight_msfd": float(weight_msfd),
             "weight_magnitude": float(weight_magnitude),
             "weight_spatial": float(weight_spatial),
         }
