@@ -1,6 +1,13 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 import matplotlib.pyplot as plt
+import numpy as np
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.rank
+isRoot = rank == 0
+
 
 room_name = 'testing_rectangular_5_3_4'
 params = {
@@ -35,7 +42,17 @@ params = {
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
 mesher = Mesher()
-mesh_path = mesher.create(params, room_name=room_name, visualize=False, source_pos=(2.5, 2.5, 1.5))
+if isRoot:
+    mesh_path = mesher.create(
+        params,
+        room_name=room_name,
+        visualize=False,
+        source_pos=(2.5, 2.5, 1.5)
+    )
+else:
+    mesh_path = None
+
+mesh_path = comm.bcast(mesh_path, root=0)
 
 directSimulator = DirectSimulator()
 freqs, spl_responses = directSimulator.simulate(
@@ -44,22 +61,31 @@ freqs, spl_responses = directSimulator.simulate(
         (1, 1, 1.5),
         (2, 1, 1.5),
     ],
-    room_name=room_name,
-    export=True
+    room_name=room_name
     )
 
-labels = ["Mic (1,1,1.5)", "Mic (2,1,1.5)"]
+if spl_responses is not None:
 
-plt.figure()
-for m in range(spl_responses.shape[1]):
-    plt.plot(freqs, spl_responses[:, m], label=labels[m])
+    print("freqs shape:", freqs.shape)
+    print("spl shape:", spl_responses.shape)
+    print("has -inf:", np.isneginf(spl_responses).any())
+    print("has nan:", np.isnan(spl_responses).any())
+    print("min spl:", np.nanmin(spl_responses))
+    print("max spl:", np.nanmax(spl_responses))
 
-plt.xlabel("Frequency [Hz]")
-plt.ylabel("SPL [dB]")
-plt.title("SPL response")
-plt.grid(True)
-plt.legend()
-plt.show()
+    labels = ["Mic (1,1,1.5)", "Mic (2,1,1.5)"]
 
+    plt.figure()
+
+    for m in range(spl_responses.shape[0]):
+        label = labels[m] if m < len(labels) else f"Mic {m + 1}"
+        plt.plot(freqs, spl_responses[m, :], label=label)
+
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("SPL [dB]")
+    plt.title("SPL response")
+    plt.grid(True)
+    plt.legend()
+    plt.show()
 
 
