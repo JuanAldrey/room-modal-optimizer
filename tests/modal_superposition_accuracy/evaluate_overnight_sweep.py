@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from room_modal_optimizer.evaluation.evaluator import ModalEvaluator
+from room_modal_optimizer.evaluation.evaluator import Evaluator
 
 
 # =========================================================
@@ -204,7 +204,7 @@ def evaluateResponse(freqs, splResponses):
         freqs=freqs,
     )
 
-    result = ModalEvaluator.evaluate_msfd(
+    result = Evaluator.evaluate_msfd(
         response=responseDb,
         input_is_db=True,
         weight_magnitude=0.5,

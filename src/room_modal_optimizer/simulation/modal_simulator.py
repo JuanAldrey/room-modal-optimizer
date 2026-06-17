@@ -56,11 +56,13 @@ class ModalSimulator:
         self.loadMesh(mesh_path)
         self.setup(order)
 
+        print("pre MA...")
         self.computeModalAnalysis(
             target_freq=target_freq,
             n_modes=n_modes,
             tol=tol,
         )
+        print("post MA...")
 
         self.obtainModes()
         self.sortModes()

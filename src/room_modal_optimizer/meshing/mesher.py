@@ -22,7 +22,7 @@ class Mesher:
         self.intersection_validator = IntersectionValidator()
         self.intersection_error = False
     
-    def create(self, params, lc=0.2, room_name='room', visualize=False, source_pos=None):
+    def create(self, params, lc=0.28, room_name='room', visualize=False, source_pos=None):
         self.params = params['data']
         self.lc = lc
         self.room_name = room_name

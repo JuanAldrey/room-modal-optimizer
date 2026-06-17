@@ -38,19 +38,30 @@ mesher = Mesher()
 mesh_path = mesher.create(params, room_name=room_name, visualize=False, source_pos=(2.5, 2.5, 1.5))
 
 directSimulator = DirectSimulator()
-freqs, spl_responses = directSimulator.simulate(
-    mesh_path, 
-    mic_positions = [
-        (1, 1, 1.5),
-        (2, 1, 1.5),
-    ],
-    room_name=room_name,
-    export=True
-    )
+mic_positions = [
+    (1, 1, 1.5),
+    (2, 1, 1.5),
+    (3, 1, 1.5),
+    (2, 2, 1.5),
+    (2, 1, 2.5),
+    (1, 3, 1.5),
+    (1.5, 1.3, 1.5),
+    (2.2, 1.7, 1.5),
+]
 
-labels = ["Mic (1,1,1.5)", "Mic (2,1,1.5)"]
+freqs, spl_responses = directSimulator.simulate(
+    mesh_path,
+    mic_positions=mic_positions,
+    room_name=room_name,
+)
+
+labels = [
+    f"Mic {i + 1} ({x}, {y}, {z})"
+    for i, (x, y, z) in enumerate(mic_positions)
+]
 
 plt.figure()
+
 for m in range(spl_responses.shape[1]):
     plt.plot(freqs, spl_responses[:, m], label=labels[m])
 

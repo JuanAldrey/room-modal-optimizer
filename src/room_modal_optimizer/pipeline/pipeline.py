@@ -1,21 +1,22 @@
 import numpy as np
 
 class Pipeline:
-    def __init__(self, mesher, modalSimulator, directSimulator,evaluator):
+    def __init__(self, mesher, modalSimulator, directSimulator, evaluator):
         self.mesher = mesher
         self.modalSimulator = modalSimulator
         self.directSimulator = directSimulator
         self.evaluator = evaluator
         self.failedRooms = []
 
-    def run(self, params, source_pos, room_name='room'):
+    def run(self, params, room_name='room'):
         # Generate mesh
-        meshPath = self.mesher.create(params, lc=0.2, source_pos=source_pos, room_name=room_name)
+        meshPath = self.mesher.create(params, lc=0.28, source_pos=params["data"]["source_pos"], room_name=room_name)
         if meshPath is None:
             self.failedRooms.append(params)
             return None
         
         # Calculate modes and source weights
+        print("Calculating modes...")
         modal_result = self.modalSimulator.simulate(
             mesh_path=meshPath,
             order=2,
@@ -27,10 +28,13 @@ class Pipeline:
 
         sourceWeights = modal_result["source_weights"]
 
-        # Define possible microphone positions base on audience area
+        # Define possible microphone positions based on audience area
+        print("Defining possible microphone positions...")
         possibleMicPositions = self.computePossibleMicPositions(params['data']['audience_area'])
+        print("Possible microphone positions: ", len(possibleMicPositions))
 
         # Find best microphone positions configuration
+        print("Evaluating possible microphone positions...")
         bestModalMsfd = None
         bestMicPositions = None
 
@@ -51,10 +55,12 @@ class Pipeline:
             )["MSFD"]
 
             if bestModalMsfd is None or modalMsfd < bestModalMsfd:
+                print("New best: ", modalMsfd)
                 bestModalMsfd = modalMsfd
                 bestMicPositions = micPositions
 
         # Calculate response with direct simulator
+        print("Calculating direct response")
         freqsOut, splResponses = self.directSimulator.simulate(
             mesh_path=meshPath,
             mic_positions=bestMicPositions,
@@ -67,6 +73,7 @@ class Pipeline:
         )
 
         # Return definitive MSFD
+        print("Calculating final MSFD")
         return self.evaluator.evaluate_msfd(
                 response=splResponses,
                 input_is_db=True,
@@ -81,40 +88,34 @@ class Pipeline:
         nMics=5,
         micHeight=1.2,
         minDistance=0.5,
-        gridStep=0.25,
         nConfigs=200,
         randomSeed=1234,
+        margin=0.1,
     ):
-        polygon = self.parseAudienceArea(audienceArea)
+        xMin, xMax, yMin, yMax = self.getAudienceBounds(audienceArea)
 
-        candidatePoints = self.generateCandidateMicGrid(
-            polygon=polygon,
-            micHeight=micHeight,
-            gridStep=gridStep,
-        )
+        xMin += margin
+        xMax -= margin
+        yMin += margin
+        yMax -= margin
 
-        if len(candidatePoints) < nMics:
-            raise ValueError(
-                f"No hay suficientes puntos candidatos: {len(candidatePoints)} "
-                f"para nMics={nMics}"
-            )
+        if xMin >= xMax or yMin >= yMax:
+            raise ValueError("El audience_area queda inválida después de aplicar margin.")
 
         rng = np.random.default_rng(randomSeed)
 
         configs = []
-        tries = 0
         maxTries = nConfigs * 200
 
-        while len(configs) < nConfigs and tries < maxTries:
-            tries += 1
+        for _ in range(maxTries):
+            if len(configs) >= nConfigs:
+                break
 
-            indices = rng.choice(
-                len(candidatePoints),
-                size=nMics,
-                replace=False,
-            )
+            xs = rng.uniform(xMin, xMax, size=nMics)
+            ys = rng.uniform(yMin, yMax, size=nMics)
+            zs = np.full(nMics, micHeight)
 
-            micPositions = candidatePoints[indices]
+            micPositions = np.column_stack([xs, ys, zs])
 
             if self.hasMinimumDistance(micPositions, minDistance):
                 configs.append([
@@ -127,79 +128,26 @@ class Pipeline:
 
         return configs
     
-    def parseAudienceArea(self, audienceArea):
-        if isinstance(audienceArea, dict):
-            vertices = audienceArea["vertices"]
+    def getAudienceBounds(self, audienceArea):
+        vertices = audienceArea
 
-            if isinstance(vertices, dict):
-                keys = sorted(
-                    vertices.keys(),
-                    key=lambda key: int(key[1:])
-                )
+        keys = sorted(
+            vertices.keys(),
+            key=lambda key: int(key[1:])
+        )
 
-                polygon = [
-                    vertices[key]
-                    for key in keys
-                ]
+        points = np.asarray(
+            [vertices[key] for key in keys],
+            dtype=float,
+        )
 
-            else:
-                polygon = vertices
+        xMin = float(np.min(points[:, 0]))
+        xMax = float(np.max(points[:, 0]))
+        yMin = float(np.min(points[:, 1]))
+        yMax = float(np.max(points[:, 1]))
 
-        else:
-            polygon = audienceArea
-
-        polygon = np.asarray(polygon, dtype=float)
-
-        if polygon.ndim != 2 or polygon.shape[1] != 2:
-            raise ValueError(f"audienceArea inválida: shape={polygon.shape}")
-
-        return polygon
-
-
-    def generateCandidateMicGrid(self, polygon, micHeight, gridStep):
-        minX = np.min(polygon[:, 0])
-        maxX = np.max(polygon[:, 0])
-        minY = np.min(polygon[:, 1])
-        maxY = np.max(polygon[:, 1])
-
-        xs = np.arange(minX, maxX + 0.5 * gridStep, gridStep)
-        ys = np.arange(minY, maxY + 0.5 * gridStep, gridStep)
-
-        points = []
-
-        for x in xs:
-            for y in ys:
-                if self.pointInPolygon((x, y), polygon):
-                    points.append([x, y, micHeight])
-
-        return np.asarray(points, dtype=float)
-
-
-    def pointInPolygon(self, point, polygon):
-        x, y = point
-        inside = False
-
-        n = len(polygon)
-        j = n - 1
-
-        for i in range(n):
-            xi, yi = polygon[i]
-            xj, yj = polygon[j]
-
-            intersects = (
-                ((yi > y) != (yj > y))
-                and (
-                    x < (xj - xi) * (y - yi) / ((yj - yi) + 1e-15) + xi
-                )
-            )
-
-            if intersects:
-                inside = not inside
-
-            j = i
-
-        return inside
-
+        return xMin, xMax, yMin, yMax
+    
     def hasMinimumDistance(self, micPositions, minDistance):
         micPositions = np.asarray(micPositions, dtype=float)
 

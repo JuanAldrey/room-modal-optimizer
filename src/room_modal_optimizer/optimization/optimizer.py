@@ -1,24 +1,28 @@
 import copy
 import numpy as np
 import pygad
+import os
+import time
 
-from room_modal_optimizer.pipeline.pipeline import ModalPipeline
+from room_modal_optimizer.pipeline.pipeline import Pipeline
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
-from room_modal_optimizer.evaluation.evaluator import ModalEvaluator
+from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
+from room_modal_optimizer.evaluation.evaluator import Evaluator
 
 # Gene space config format:
 gene_space_config = {
     "vertices": {
-        "V1": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
-        "V5": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
-        "V8": {"dx": [-5.0, 4.0], "dy": [-4.0, 5.0]},
+        "V1": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
+        "V2": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
+        "V3": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
+        "V4": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
     },
     "walls": {
         "W1": {"low": -5.0, "high": 5.0},
         "W2": {"low": -5.0, "high": 5.0},
-        "W5": {"low": -5.0, "high": 5.0},
-        "W7": {"low": -5.0, "high": 5.0},
+        "W3": {"low": -5.0, "high": 5.0},
+        "W4": {"low": -5.0, "high": 5.0},
     },
     "Z": {"low": 2.0, "high": 5.0}
 }
@@ -27,39 +31,31 @@ base_params = {
     "data": {
         "vertices": {
             "V1": [0.0, 0.0],
-            "V2": [2.0, -0.2],
-            "V3": [4.0, 0.3],
-            "V4": [4.7, 1.6],
-            "V5": [4.0, 3.0],
-            "V6": [2.4, 3.5],
-            "V7": [0.7, 3.0],
-            "V8": [-0.4, 1.4]
+            "V2": [0.0, 5.0],
+            "V3": [3.0, 5.0],
+            "V4": [3.0, 0.0]
+
         },
         "walls": {
             "W1": 0.0,
             "W2": 0.0,
             "W3": 0.0,
-            "W4": 0.0,
-            "W5": 0.0,
-            "W6": 0.0,
-            "W7": 0.0,
-            "W8": 0.0
+            "W4": 0.0
         },
-        "Z": 3.0
+        "audience_area": {
+            "V1": [1.0, 0.0],
+            "V2": [1.0, 2.0],
+            "V3": [2.0, 2.0],
+            "V4": [2.0, 0.0]
+        },
+        "Z": 3.0,
+        "source_pos": [1.5, 4, 1.5]
     }
 }
 
-class ModalOptimizer:
+class Optimizer:
     def __init__(self, base_params, gene_space_config):
-        self.mesher = Mesher()
-        self.modal_simulator = ModalSimulator()
-        self.modal_evaluator = ModalEvaluator()
-        self.modal_pipeline = ModalPipeline(
-            self.mesher,
-            self.modal_simulator,
-            self.modal_evaluator,
-        )
-
+        self.total_runtime_s = None
         self.base_params = base_params
         self.ga_instance = None
         self.genes = []
@@ -74,7 +70,26 @@ class ModalOptimizer:
 
     def run(self):
         self.create_ga_instance()
+
+        startTime = time.perf_counter()
+
         self.ga_instance.run()
+
+        endTime = time.perf_counter()
+        self.total_runtime_s = endTime - startTime
+
+        print("\n========== GA RUNTIME ==========")
+        print(f"Total runtime: {self.total_runtime_s:.2f} s")
+        print(f"Total runtime: {self.total_runtime_s / 60:.2f} min")
+        print("================================\n")
+
+    def build_pipeline(self):
+        return Pipeline(
+            Mesher(),
+            ModalSimulator(),
+            DirectSimulator(),
+            Evaluator()
+        )
 
     def solution_to_params(self, solution):
         params = copy.deepcopy(self.base_params)
@@ -94,24 +109,27 @@ class ModalOptimizer:
     
     def fitness_func(self, ga_instance, solution, solution_idx):
         generation = ga_instance.generations_completed
-        room_name = f"ga_modal_gen_{generation:03d}_sol_{solution_idx:03d}"
+        room_name = (
+            f"ga_modal_gen_{generation:03d}"
+            f"_sol_{solution_idx:03d}"
+            f"_pid_{os.getpid()}"
+        )
 
         params = self.solution_to_params(solution)
 
-        idx = self.modal_pipeline.run(
+        pipeline = self.build_pipeline()
+
+        idx = pipeline.run(
             params,
             room_name=room_name,
-            order=1,
-            visualize=False,
-            export=False,
         )
         
         if idx is None:
             fitness = 1e-9
+            print(f"{room_name} | idx=None | fitness={fitness:.6f}")
         else:
             fitness = 1.0 / (1.0 + abs(idx))
-
-        print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
+            print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
         return fitness
     
@@ -143,7 +161,7 @@ class ModalOptimizer:
                 "high": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][1]
                 })
             gene_space.append({
-                "low": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][0], 
+                "low": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][0],
                 "high": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][1]
                 })
             self.genes.append(({"type": "vertex", "key": vertex_key}))
@@ -165,24 +183,23 @@ class ModalOptimizer:
     # TODO: investigate better GA params
     def create_ga_instance(self):
         self.ga_instance = pygad.GA(
-            num_generations=100,
-            sol_per_pop=10,
-            num_parents_mating=5,
+            num_generations=2,
+            sol_per_pop=3,
+            num_parents_mating=2,
 
             num_genes=len(self.gene_space),
             gene_space=self.gene_space,
 
             fitness_func=self.fitness_func,
 
-            #parent_selection_type=,    -> default selection type
-            #"K_tournament=3,
+            parallel_processing=["process", 1],
 
             crossover_type="single_point",
 
             mutation_type="random",
             mutation_probability=0.15,
 
-            keep_elitism=3,
+            keep_elitism=1,
 
             on_generation=self.on_generation,
 
@@ -212,12 +229,16 @@ class ModalOptimizer:
                 f"worst={worst:.6f}"
             )
 
-        final_idx = self.modal_pipeline.run(
+        pipeline = self.build_pipeline()
+
+        final_idx = pipeline.run(
             best_params,
-            room_name="ga_modal_best",
-            order=2,
-            visualize=False,
-            export=False,
+            room_name="ga_modal_best"
         )
 
         print("Final idx:", final_idx)
+
+if __name__ == "__main__":
+    optimizer = Optimizer(base_params, gene_space_config)
+    optimizer.run()
+    optimizer.get_history()

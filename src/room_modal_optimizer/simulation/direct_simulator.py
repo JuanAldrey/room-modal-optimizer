@@ -18,6 +18,7 @@ class DirectSimulator:
         self.V = None
         self.p = None
         self.v = None
+        self.order = None
         
         #FEM - Direct
         self.direct_problem = None
@@ -43,8 +44,9 @@ class DirectSimulator:
         # Room name
         self.room_name = None
 
-    def simulate(self, mesh_path, mic_positions, room_name='room', freqs=None, use_impedance=True, wall_z=25.0 + 0j, floor_z=25.0 + 0j, ceiling_z=25.0 + 0j):
+    def simulate(self, mesh_path, mic_positions, order=1, room_name='room', freqs=None, use_impedance=True, wall_z=25.0 + 0j, floor_z=25.0 + 0j, ceiling_z=25.0 + 0j):
         self.room_name = room_name
+        self.order = order
         self.use_impedance = use_impedance
         if freqs is not None:
             self.freqs = np.asarray(freqs, dtype=float)
@@ -63,7 +65,9 @@ class DirectSimulator:
 
         if splResponse.shape[0] == len(self.freqs):
             splResponse = splResponse.T
-    
+
+        self.spl_response = splResponse
+
         return self.freqs, self.spl_response
         
     def loadMesh(self, mesh_path):
@@ -84,7 +88,7 @@ class DirectSimulator:
         
     def setup(self):
         print("Initial setup...")
-        self.V = fem.functionspace(self.domain, ("Lagrange", 1))
+        self.V = fem.functionspace(self.domain, ("Lagrange", self.order))
         self.p = ufl.TrialFunction(self.V)
         self.v = ufl.TestFunction(self.V)
         
