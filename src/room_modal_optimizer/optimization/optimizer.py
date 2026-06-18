@@ -34,7 +34,6 @@ base_params = {
             "V2": [0.0, 5.0],
             "V3": [3.0, 5.0],
             "V4": [3.0, 0.0]
-
         },
         "walls": {
             "W1": 0.0,
@@ -54,12 +53,13 @@ base_params = {
 }
 
 class Optimizer:
-    def __init__(self, base_params, gene_space_config):
+    def __init__(self, base_params, gene_space_config, minMicDistance=0.25):
         self.total_runtime_s = None
         self.base_params = base_params
         self.ga_instance = None
         self.genes = []
         self.gene_space = self.define_gene_space(gene_space_config)
+        self.minMicDistance = minMicDistance
 
         self.fitness_history = {
             "generation": [],
@@ -82,14 +82,6 @@ class Optimizer:
         print(f"Total runtime: {self.total_runtime_s:.2f} s")
         print(f"Total runtime: {self.total_runtime_s / 60:.2f} min")
         print("================================\n")
-
-    def build_pipeline(self):
-        return Pipeline(
-            Mesher(),
-            ModalSimulator(),
-            DirectSimulator(),
-            Evaluator()
-        )
 
     def solution_to_params(self, solution):
         params = copy.deepcopy(self.base_params)
@@ -119,9 +111,10 @@ class Optimizer:
 
         pipeline = self.build_pipeline()
 
-        idx = pipeline.run(
+        idx, bestMicPositions = pipeline.run(
             params,
             room_name=room_name,
+            minMicDistance=self.minMicDistance
         )
         
         if idx is None:
@@ -132,6 +125,13 @@ class Optimizer:
             print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
         return fitness
+    
+    def build_pipeline(self):
+        return Pipeline(
+            Mesher(),
+            DirectSimulator(),
+            Evaluator()
+        )
     
     def on_generation(self, ga_instance):
         generation = ga_instance.generations_completed

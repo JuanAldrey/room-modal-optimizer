@@ -36,6 +36,6 @@ base_params = {
     }
 }
 
-optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config)
+optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.25)
 optimizer.run()
 optimizer.get_history()
