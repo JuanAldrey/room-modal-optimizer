@@ -126,7 +126,7 @@ class DirectSimulator:
     
     def computeFrequencyResponse(self):
         print("Computing frequency response...")
-        self.pressure_response = np.zeros((len(self.freqs), self.microphone.n_mics), dtype=complex)
+        pressureRows = []
         
         for nf in range(0, len(self.freqs)):
             freq = self.freqs[nf]
@@ -142,8 +142,17 @@ class DirectSimulator:
 
             if self.domain.comm.rank == 0:
                 assert p_f is not None
-                self.pressure_response[nf] = np.hstack(p_f).ravel()
+                row = np.hstack(p_f).ravel()
+                pressureRows.append(row)
                 
+        if self.domain.comm.rank == 0:
+            self.pressure_response = np.vstack(pressureRows)
+
+            print(
+                f"Located microphones: {self.pressure_response.shape[1]} "
+                f"of {self.microphone.n_mics}"
+            )
+            
     def pressureToSpl(self):
         print("Pressure to SPL...")
         eps = 1e-12

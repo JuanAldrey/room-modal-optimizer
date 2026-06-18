@@ -3,6 +3,8 @@ import numpy as np
 import pygad
 import os
 import time
+import json
+from pathlib import Path
 
 from room_modal_optimizer.pipeline.pipeline import Pipeline
 from room_modal_optimizer.meshing.mesher import Mesher
@@ -60,6 +62,8 @@ class Optimizer:
         self.genes = []
         self.gene_space = self.define_gene_space(gene_space_config)
         self.minMicDistance = minMicDistance
+        self.resultsDir = Path("ga_results")
+        self.resultsDir.mkdir(parents=True, exist_ok=True)
 
         self.fitness_history = {
             "generation": [],
@@ -82,6 +86,10 @@ class Optimizer:
         print(f"Total runtime: {self.total_runtime_s:.2f} s")
         print(f"Total runtime: {self.total_runtime_s / 60:.2f} min")
         print("================================\n")
+
+        params, micPositions = self.get_history()
+
+        return params, micPositions
 
     def solution_to_params(self, solution):
         params = copy.deepcopy(self.base_params)
@@ -123,6 +131,19 @@ class Optimizer:
         else:
             fitness = 1.0 / (1.0 + abs(idx))
             print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
+
+        with open(self.resultsDir / f"{room_name}.json", "w", encoding="utf-8") as f:
+            json.dump({
+                "room_name": room_name,
+                "generation": int(generation),
+                "solution_idx": int(solution_idx),
+                "idx": None if idx is None else float(idx),
+                "fitness": float(fitness),
+                "best_mic_positions": None
+                if bestMicPositions is None
+                else np.asarray(bestMicPositions, dtype=float).tolist(),
+                "params": params
+            }, f, indent=4)
 
         return fitness
     
@@ -183,9 +204,9 @@ class Optimizer:
     # TODO: investigate better GA params
     def create_ga_instance(self):
         self.ga_instance = pygad.GA(
-            num_generations=2,
-            sol_per_pop=3,
-            num_parents_mating=2,
+            num_generations=10,
+            sol_per_pop=10,
+            num_parents_mating=4,
 
             num_genes=len(self.gene_space),
             gene_space=self.gene_space,
@@ -199,7 +220,7 @@ class Optimizer:
             mutation_type="random",
             mutation_probability=0.15,
 
-            keep_elitism=1,
+            keep_elitism=2,
 
             on_generation=self.on_generation,
 
@@ -207,36 +228,35 @@ class Optimizer:
         )
 
     def get_history(self):
-        best_solution, best_fitness, best_idx = self.ga_instance.best_solution()
-        best_params = self.solution_to_params(best_solution)
+        print("\n========== BEST ROOM ==========")
+        bestResult = self.get_best_result()
 
-        print("\n========== BEST RESULT ==========")
-        print("Best fitness:", best_fitness)
-        print("Best solution:", best_solution)
-        print("Best params:", best_params)
+        print("Room name: ", bestResult["room_name"])
+        print("MSFD (order 1): ", bestResult["idx"])
+        print("Microphone positions: ")
+        print(bestResult["best_mic_positions"])
 
-        print("\n========== FITNESS HISTORY ==========")
-        for gen, best, mean, worst in zip(
-            self.fitness_history["generation"],
-            self.fitness_history["best_fitness"],
-            self.fitness_history["mean_fitness"],
-            self.fitness_history["worst_fitness"],
-        ):
-            print(
-                f"Gen {gen}: "
-                f"best={best:.6f}, "
-                f"mean={mean:.6f}, "
-                f"worst={worst:.6f}"
-            )
+        return bestResult["params"], bestResult["best_mic_positions"]
+    
+    def get_best_result(self):
+        history = []
 
-        pipeline = self.build_pipeline()
+        for resultPath in self.resultsDir.glob("*.json"):
+            with open(resultPath, "r", encoding="utf-8") as f:
+                result = json.load(f)
 
-        final_idx = pipeline.run(
-            best_params,
-            room_name="ga_modal_best"
+            history.append(result)
+
+        history = sorted(
+            history,
+            key=lambda item: item["fitness"],
+            reverse=True,
         )
 
-        print("Final idx:", final_idx)
+        if len(history) == 0:
+            return None
+
+        return history[0]
 
 if __name__ == "__main__":
     optimizer = Optimizer(base_params, gene_space_config)
