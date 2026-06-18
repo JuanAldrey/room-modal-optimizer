@@ -11,6 +11,7 @@ from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 from room_modal_optimizer.evaluation.evaluator import Evaluator
+from room_modal_optimizer.optimization.gene_space_validator import GeneSpaceValidator
 
 # Gene space config format:
 gene_space_config = {
@@ -60,6 +61,7 @@ class Optimizer:
         self.base_params = base_params
         self.ga_instance = None
         self.genes = []
+        self.gene_space_validator = GeneSpaceValidator()
         self.gene_space = self.define_gene_space(gene_space_config)
         self.minMicDistance = minMicDistance
         self.resultsDir = Path("ga_results")
@@ -175,6 +177,8 @@ class Optimizer:
         print("==============================\n")
 
     def define_gene_space(self, gene_space_config):
+        self.validate_gene_space(gene_space_config)
+
         gene_space = []
         for vertex_key, vertex_config in gene_space_config["vertices"].items():
             gene_space.append({
@@ -200,6 +204,19 @@ class Optimizer:
             self.genes.append(({"type": "height", "key": "Z"}))
 
         return gene_space
+    
+    def validate_gene_space(self, gene_space_config):
+        ok, message = self.gene_space_validator.validateGeneSpaceSafety(
+            baseParams=self.base_params,
+            geneSpaceConfig=gene_space_config,
+            margin=0.1,
+        )
+
+        print("Gene space safety: ", ok)
+        print(message)
+
+        if not ok:
+            raise ValueError(message)
     
     # TODO: investigate better GA params
     def create_ga_instance(self):
