@@ -8,56 +8,14 @@ from pathlib import Path
 
 from room_modal_optimizer.pipeline.pipeline import Pipeline
 from room_modal_optimizer.meshing.mesher import Mesher
-from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 from room_modal_optimizer.evaluation.evaluator import Evaluator
 from room_modal_optimizer.optimization.gene_space_validator import GeneSpaceValidator
 
-# Gene space config format:
-gene_space_config = {
-    "vertices": {
-        "V1": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
-        "V2": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
-        "V3": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
-        "V4": {"dx": [-0.5, 0.5], "dy": [-0.5, 0.5]},
-    },
-    "walls": {
-        "W1": {"low": -5.0, "high": 5.0},
-        "W2": {"low": -5.0, "high": 5.0},
-        "W3": {"low": -5.0, "high": 5.0},
-        "W4": {"low": -5.0, "high": 5.0},
-    },
-    "Z": {"low": 2.0, "high": 5.0}
-}
-
-base_params = {
-    "data": {
-        "vertices": {
-            "V1": [0.0, 0.0],
-            "V2": [0.0, 5.0],
-            "V3": [3.0, 5.0],
-            "V4": [3.0, 0.0]
-        },
-        "walls": {
-            "W1": 0.0,
-            "W2": 0.0,
-            "W3": 0.0,
-            "W4": 0.0
-        },
-        "audience_area": {
-            "V1": [1.0, 0.0],
-            "V2": [1.0, 2.0],
-            "V3": [2.0, 2.0],
-            "V4": [2.0, 0.0]
-        },
-        "Z": 3.0,
-        "source_pos": [1.5, 4, 1.5]
-    }
-}
-
 class Optimizer:
-    def __init__(self, base_params, gene_space_config, minMicDistance=0.25):
+    def __init__(self, base_params, gene_space_config, minMicDistance=0.25, keepSymmetry=False):
         self.total_runtime_s = None
+        self.keepSymmetry = keepSymmetry
         self.base_params = base_params
         self.ga_instance = None
         self.genes = []
@@ -107,7 +65,161 @@ class Optimizer:
                 params["data"]["Z"] = float(solution[solution_idx])
                 solution_idx += 1
 
+        if self.keepSymmetry:
+            params = self.expandSymmetricParams(params)
+
         return params
+    
+    def expandSymmetricParams(self, params, axisTolerance=1e-9):
+        params = copy.deepcopy(params)
+
+        vertices = params["data"]["vertices"]
+        baseVertices = self.base_params["data"]["vertices"]
+
+        for gene in self.genes:
+            if gene["type"] != "vertex":
+                continue
+
+            masterKey = gene["key"]
+
+            mirrorKey = self.findMirrorVertexKey(
+                masterKey=masterKey,
+                baseVertices=baseVertices,
+                axisTolerance=axisTolerance,
+            )
+
+            masterPoint = np.asarray(vertices[masterKey], dtype=float)
+
+            vertices[mirrorKey] = [
+                float(-masterPoint[0]),
+                float(masterPoint[1]),
+            ]
+
+        params["data"]["vertices"] = vertices
+
+        walls = params["data"].get("walls", {})
+
+        for gene in self.genes:
+            if gene["type"] != "wall":
+                continue
+
+            masterWallKey = gene["key"]
+
+            mirrorWallKey = self.findMirrorWallKey(
+                masterWallKey=masterWallKey,
+                baseVertices=baseVertices,
+                axisTolerance=axisTolerance,
+            )
+
+            walls[mirrorWallKey] = float(walls[masterWallKey])
+
+        params["data"]["walls"] = walls
+
+        return params
+    
+    def findMirrorVertexKey(self, masterKey, baseVertices, axisTolerance=1e-9):
+        masterPoint = np.asarray(baseVertices[masterKey], dtype=float)
+        targetPoint = np.asarray([-masterPoint[0], masterPoint[1]], dtype=float)
+
+        for vertexKey, point in baseVertices.items():
+            if vertexKey == masterKey:
+                continue
+
+            point = np.asarray(point, dtype=float)
+
+            if np.linalg.norm(point - targetPoint) <= axisTolerance:
+                return vertexKey
+
+        raise ValueError(
+            f"No se encontró vértice espejo para {masterKey}. "
+            f"Esperaba un punto cercano a {targetPoint.tolist()}"
+        )
+    
+    def findMirrorWallKey(self, masterWallKey, baseVertices, axisTolerance=1e-9):
+        wallEdges = self.getWallEdges(baseVertices)
+
+        p1, p2 = wallEdges[masterWallKey]
+
+        targetP1 = np.asarray([-p1[0], p1[1]], dtype=float)
+        targetP2 = np.asarray([-p2[0], p2[1]], dtype=float)
+
+        for wallKey, (q1, q2) in wallEdges.items():
+            sameDirection = (
+                np.linalg.norm(q1 - targetP1) <= axisTolerance
+                and np.linalg.norm(q2 - targetP2) <= axisTolerance
+            )
+
+            oppositeDirection = (
+                np.linalg.norm(q1 - targetP2) <= axisTolerance
+                and np.linalg.norm(q2 - targetP1) <= axisTolerance
+            )
+
+            if sameDirection or oppositeDirection:
+                return wallKey
+
+        raise ValueError(
+            f"No se encontró pared espejo para {masterWallKey}."
+        )
+
+
+    def getWallEdges(self, vertices):
+        keys = sorted(vertices.keys(), key=lambda key: int(key[1:]))
+        edges = {}
+
+        for i, key in enumerate(keys):
+            nextKey = keys[(i + 1) % len(keys)]
+
+            wallKey = f"W{i + 1}"
+
+            p1 = np.asarray(vertices[key], dtype=float)
+            p2 = np.asarray(vertices[nextKey], dtype=float)
+
+            edges[wallKey] = (p1, p2)
+
+        return edges
+    
+    def define_gene_space(self, gene_space_config):
+        self.validate_gene_space(gene_space_config)
+
+        gene_space = []
+        for vertex_key, vertex_config in gene_space_config["vertices"].items():
+            gene_space.append({
+                "low": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][0],
+                "high": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][1]
+                })
+            gene_space.append({
+                "low": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][0],
+                "high": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][1]
+                })
+            self.genes.append(({"type": "vertex", "key": vertex_key}))
+        for wall_key, wall_config in gene_space_config["walls"].items():
+            gene_space.append({
+                "low": wall_config["low"], 
+                "high": wall_config["high"]
+                })
+            self.genes.append(({"type": "wall", "key": wall_key}))
+        if gene_space_config["Z"]:
+            gene_space.append({
+                "low": gene_space_config["Z"]["low"],
+                "high": gene_space_config["Z"]["high"],
+            })
+            self.genes.append(({"type": "height", "key": "Z"}))
+
+        return gene_space
+    
+    def validate_gene_space(self, gene_space_config):
+        ok, message = self.gene_space_validator.validateGeneSpaceSafety(
+            baseParams=self.base_params,
+            geneSpaceConfig=gene_space_config,
+            margin=0.1,
+            keepSymmetry=self.keepSymmetry,
+        )
+
+        print("Gene space safety: ", ok)
+        print(message)
+
+        if not ok:
+            raise ValueError(message)
     
     def fitness_func(self, ga_instance, solution, solution_idx):
         generation = ga_instance.generations_completed
@@ -175,53 +287,11 @@ class Optimizer:
         print("Mean fitness:", mean_fitness)
         print("Worst fitness:", worst_fitness)
         print("==============================\n")
-
-    def define_gene_space(self, gene_space_config):
-        self.validate_gene_space(gene_space_config)
-
-        gene_space = []
-        for vertex_key, vertex_config in gene_space_config["vertices"].items():
-            gene_space.append({
-                "low": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][0],
-                "high": self.base_params["data"]["vertices"][vertex_key][0] + vertex_config["dx"][1]
-                })
-            gene_space.append({
-                "low": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][0],
-                "high": self.base_params["data"]["vertices"][vertex_key][1] + vertex_config["dy"][1]
-                })
-            self.genes.append(({"type": "vertex", "key": vertex_key}))
-        for wall_key, wall_config in gene_space_config["walls"].items():
-            gene_space.append({
-                "low": wall_config["low"], 
-                "high": wall_config["high"]
-                })
-            self.genes.append(({"type": "wall", "key": wall_key}))
-        if gene_space_config["Z"]:
-            gene_space.append({
-                "low": gene_space_config["Z"]["low"],
-                "high": gene_space_config["Z"]["high"],
-            })
-            self.genes.append(({"type": "height", "key": "Z"}))
-
-        return gene_space
-    
-    def validate_gene_space(self, gene_space_config):
-        ok, message = self.gene_space_validator.validateGeneSpaceSafety(
-            baseParams=self.base_params,
-            geneSpaceConfig=gene_space_config,
-            margin=0.1,
-        )
-
-        print("Gene space safety: ", ok)
-        print(message)
-
-        if not ok:
-            raise ValueError(message)
     
     # TODO: investigate better GA params
     def create_ga_instance(self):
         self.ga_instance = pygad.GA(
-            num_generations=10,
+            num_generations=4,
             sol_per_pop=10,
             num_parents_mating=4,
 
@@ -274,8 +344,3 @@ class Optimizer:
             return None
 
         return history[0]
-
-if __name__ == "__main__":
-    optimizer = Optimizer(base_params, gene_space_config)
-    optimizer.run()
-    optimizer.get_history()

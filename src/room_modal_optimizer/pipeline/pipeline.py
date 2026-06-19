@@ -9,7 +9,7 @@ class Pipeline:
         self.evaluator = evaluator
         self.failedRooms = []
 
-    def run(self, params, room_name='room', minMicDistance=0.5):
+    def run(self, params, room_name='room', minMicDistance=0.5, nMics=4):
         # Generate mesh
         meshPath = self.mesher.create(params, lc=0.28, source_pos=params["data"]["source_pos"], room_name=room_name)
         if meshPath is None:
@@ -29,7 +29,6 @@ class Pipeline:
         plotsDir = Path("data") / room_name / "plots"
         plotsDir.mkdir(parents=True, exist_ok=True)
 
-        """
         # Plots for documenting
         self.plotMicLayout(
             params=params,
@@ -38,7 +37,6 @@ class Pipeline:
             title="Possible mic positions",
             outputPath=plotsDir / "possible_mic_positions.png",
         )
-        """
 
         # Calculate transfer function from source to all microphones
         freqsOut, splResponses = self.directSimulator.simulate(
@@ -56,7 +54,7 @@ class Pipeline:
         # Extract possible microphone combos and calculate best MSFD
         combos = self.generateRandomCombos(
             possibleMicPositions=possibleMicPositions,
-            nMicsPerCombo=4,
+            nMicsPerCombo=nMics,
             nCombos=100000,
             minMicDistance=minMicDistance,
         )
@@ -83,8 +81,9 @@ class Pipeline:
 
                 bestMicPositions = possibleMicPositions[bestCombo]
 
-                """
+
                 # Plot for documenting
+                """
                 self.plotMicLayout(
                     params=params,
                     possibleMicPositions=possibleMicPositions,

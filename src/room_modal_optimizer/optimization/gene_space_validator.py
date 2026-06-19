@@ -3,7 +3,13 @@ import numpy as np
 
 
 class GeneSpaceValidator:
-    def validateGeneSpaceSafety(self, baseParams, geneSpaceConfig, margin=0.05):
+    def validateGeneSpaceSafety(
+        self,
+        baseParams,
+        geneSpaceConfig,
+        margin=0.05,
+        keepSymmetry=False,
+    ):
         data = baseParams["data"]
 
         baseVertices = data["vertices"]
@@ -20,9 +26,34 @@ class GeneSpaceValidator:
                 f"para Z_min={zMin}"
             )
 
+        if keepSymmetry:
+            return self.validateSymmetricGeneSpaceSafety(
+                baseVertices=baseVertices,
+                audienceArea=audienceArea,
+                sourcePos=sourcePos,
+                geneSpaceConfig=geneSpaceConfig,
+                margin=margin,
+            )
+
+        return self.validateNormalGeneSpaceSafety(
+            baseVertices=baseVertices,
+            audienceArea=audienceArea,
+            sourcePos=sourcePos,
+            geneSpaceConfig=geneSpaceConfig,
+            margin=margin,
+        )
+
+    def validateNormalGeneSpaceSafety(
+        self,
+        baseVertices,
+        audienceArea,
+        sourcePos,
+        geneSpaceConfig,
+        margin,
+    ):
         vertexKeys = sorted(
             baseVertices.keys(),
-            key=lambda key: int(key[1:])
+            key=lambda key: int(key[1:]),
         )
 
         vertexOptions = []
@@ -52,46 +83,194 @@ class GeneSpaceValidator:
             roomPolygon = np.asarray(roomOption, dtype=float)
             nChecked += 1
 
-            if self.polygonArea(roomPolygon) <= 1e-9:
-                return False, (
-                    f"Polígono inválido o clockwise "
-                    f"en combinación extrema {nChecked}"
-                )
+            ok, message = self.validateRoomPolygon(
+                roomPolygon=roomPolygon,
+                audiencePolygon=audiencePolygon,
+                sourcePoint=sourcePoint,
+                margin=margin,
+                nChecked=nChecked,
+            )
 
-            if self.polygonSelfIntersects(roomPolygon):
-                return False, (
-                    f"Polígono autointersectado "
-                    f"en combinación extrema {nChecked}"
-                )
-
-            if not self.pointInsidePolygonWithMargin(
-                sourcePoint,
-                roomPolygon,
-                margin,
-            ):
-                return False, (
-                    f"source_pos={sourcePoint.tolist()} puede quedar fuera "
-                    f"o demasiado cerca del borde "
-                    f"en combinación extrema {nChecked}"
-                )
-
-            if not self.polygonInsidePolygonWithMargin(
-                audiencePolygon,
-                roomPolygon,
-                margin,
-            ):
-                return False, (
-                    f"audience_area puede quedar fuera "
-                    f"o demasiado cerca del borde "
-                    f"en combinación extrema {nChecked}"
-                )
+            if not ok:
+                return False, message
 
         return True, f"OK: {nChecked} combinaciones extremas validadas"
+
+    def validateSymmetricGeneSpaceSafety(
+        self,
+        baseVertices,
+        audienceArea,
+        sourcePos,
+        geneSpaceConfig,
+        margin,
+    ):
+        ok, message = self.validateSymmetricGeneKeys(
+            baseVertices=baseVertices,
+            geneSpaceConfig=geneSpaceConfig,
+        )
+
+        if not ok:
+            return False, message
+
+        masterKeys = sorted(
+            geneSpaceConfig.get("vertices", {}).keys(),
+            key=lambda key: int(key[1:]),
+        )
+
+        masterOptions = []
+
+        for key in masterKeys:
+            baseX, baseY = baseVertices[key]
+            config = geneSpaceConfig["vertices"][key]
+
+            dxMin, dxMax = config.get("dx", [0.0, 0.0])
+            dyMin, dyMax = config.get("dy", [0.0, 0.0])
+
+            options = [
+                [baseX + dxMin, baseY + dyMin],
+                [baseX + dxMin, baseY + dyMax],
+                [baseX + dxMax, baseY + dyMin],
+                [baseX + dxMax, baseY + dyMax],
+            ]
+
+            masterOptions.append(options)
+
+        audiencePolygon = self.sortedPolygon(audienceArea)
+        sourcePoint = sourcePos[:2]
+
+        nChecked = 0
+
+        for masterOption in itertools.product(*masterOptions):
+            vertices = self.copyVertices(baseVertices)
+
+            for key, point in zip(masterKeys, masterOption):
+                mirrorKey = self.findMirrorVertexKey(
+                    masterKey=key,
+                    baseVertices=baseVertices,
+                )
+
+                x, y = point
+
+                vertices[key] = [
+                    float(x),
+                    float(y),
+                ]
+
+                vertices[mirrorKey] = [
+                    float(-x),
+                    float(y),
+                ]
+
+            roomPolygon = self.sortedPolygon(vertices)
+            nChecked += 1
+
+            ok, message = self.validateRoomPolygon(
+                roomPolygon=roomPolygon,
+                audiencePolygon=audiencePolygon,
+                sourcePoint=sourcePoint,
+                margin=margin,
+                nChecked=nChecked,
+            )
+
+            if not ok:
+                return False, message
+
+        return True, f"OK simétrico: {nChecked} combinaciones extremas validadas"
+
+    def validateSymmetricGeneKeys(self, baseVertices, geneSpaceConfig):
+        selectedKeys = set(geneSpaceConfig.get("vertices", {}).keys())
+
+        for key in selectedKeys:
+            mirrorKey = self.findMirrorVertexKey(
+                masterKey=key,
+                baseVertices=baseVertices,
+            )
+
+            if mirrorKey in selectedKeys:
+                return False, (
+                    f"Gene space inválido para simetría: {key} y {mirrorKey} "
+                    f"son espejos. Incluí solo uno de los dos."
+                )
+
+        return True, "OK"
+
+    def validateRoomPolygon(
+        self,
+        roomPolygon,
+        audiencePolygon,
+        sourcePoint,
+        margin,
+        nChecked,
+    ):
+        area = self.polygonArea(roomPolygon)
+
+        if area <= 1e-9:
+            return False, (
+                f"Polígono inválido o clockwise "
+                f"en combinación extrema {nChecked}"
+            )
+
+        if self.polygonSelfIntersects(roomPolygon):
+            return False, (
+                f"Polígono autointersectado "
+                f"en combinación extrema {nChecked}"
+            )
+
+        if not self.pointInsidePolygonWithMargin(
+            sourcePoint,
+            roomPolygon,
+            margin,
+        ):
+            return False, (
+                f"source_pos={sourcePoint.tolist()} puede quedar fuera "
+                f"o demasiado cerca del borde "
+                f"en combinación extrema {nChecked}"
+            )
+
+        if not self.polygonInsidePolygonWithMargin(
+            audiencePolygon,
+            roomPolygon,
+            margin,
+        ):
+            return False, (
+                f"audience_area puede quedar fuera "
+                f"o demasiado cerca del borde "
+                f"en combinación extrema {nChecked}"
+            )
+
+        return True, "OK"
+
+    def findMirrorVertexKey(self, masterKey, baseVertices, axisTolerance=1e-9):
+        masterPoint = np.asarray(baseVertices[masterKey], dtype=float)
+        targetPoint = np.asarray(
+            [-masterPoint[0], masterPoint[1]],
+            dtype=float,
+        )
+
+        for vertexKey, point in baseVertices.items():
+            if vertexKey == masterKey:
+                continue
+
+            point = np.asarray(point, dtype=float)
+
+            if np.linalg.norm(point - targetPoint) <= axisTolerance:
+                return vertexKey
+
+        raise ValueError(
+            f"No se encontró vértice espejo para {masterKey}. "
+            f"Esperaba un punto cercano a {targetPoint.tolist()}"
+        )
+
+    def copyVertices(self, vertices):
+        return {
+            key: [float(value[0]), float(value[1])]
+            for key, value in vertices.items()
+        }
 
     def sortedPolygon(self, vertices):
         keys = sorted(
             vertices.keys(),
-            key=lambda key: int(key[1:])
+            key=lambda key: int(key[1:]),
         )
 
         return np.asarray(

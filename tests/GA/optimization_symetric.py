@@ -8,42 +8,50 @@ import numpy as np
 
 gene_space_config = {
     "vertices": {
-        "V1": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
-        "V2": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
-        "V3": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
-        "V4": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
+        "V2": {"dx": [-0.50, 0.50], "dy": [-0.50, 0.50]},
+        "V3": {"dx": [-0.50, 0.50], "dy": [-0.50, 0.50]},
     },
-    "walls": {},
-    "Z": {"low": 3.0, "high": 4.2}
+    "walls": {
+        "W2": {"low": -5.0, "high": 5.0},
+    },
+    "Z": {"low": 3.0, "high": 4.2},
 }
+
 
 base_params = {
     "data": {
+        # Sala completa, orden anticlockwise
         "vertices": {
-            "V1": [0.0, 0.0],
-            "V2": [5.0, 0.0],
-            "V3": [5.0, 4.0],
-            "V4": [0.0, 4.0],
+            "V1": [-2.5, 0.0],
+            "V2": [ 2.5, 0.0],
+            "V3": [ 2.5, 4.0],
+            "V4": [-2.5, 4.0],
         },
+
         "walls": {
             "W1": 0.0,
             "W2": 0.0,
             "W3": 0.0,
             "W4": 0.0,
         },
+
+        # Audience area centrada y bien adentro
         "audience_area": {
-            "V1": [1.6, 1.1],
-            "V2": [1.6, 2.3],
-            "V3": [3.4, 2.3],
-            "V4": [3.4, 1.1],
+            "V1": [-1.0, 1.0],
+            "V2": [ 1.0, 1.0],
+            "V3": [ 1.0, 2.5],
+            "V4": [-1.0, 2.5],
         },
+
         "Z": 3.0,
-        "source_pos": [2.5, 3.2, 1.5],
+
+        # Fuente centrada en x, no pegada a pared
+        "source_pos": [0.0, 3.3, 1.5],
     }
 }
 
 # Run GA to find optimized room
-optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.25)
+optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.25, keepSymmetry=True)
 params, micPositions = optimizer.run()
 
 # Calculate best mic positions for initial room with pipeline
