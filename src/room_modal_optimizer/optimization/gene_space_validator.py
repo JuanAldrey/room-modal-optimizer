@@ -14,23 +14,34 @@ class GeneSpaceValidator:
 
         baseVertices = data["vertices"]
         audienceArea = data["audience_area"]
-        sourcePos = np.asarray(data["source_pos"], dtype=float)
+
+        sourcePositions = np.asarray(data["source_pos"], dtype=float)
+
+        if sourcePositions.ndim == 1:
+            sourcePositions = sourcePositions.reshape(1, 3)
+
+        if sourcePositions.ndim != 2 or sourcePositions.shape[1] != 3:
+            return False, (
+                "source_pos inválido: se esperaba [x, y, z] "
+                "o [[x1, y1, z1], [x2, y2, z2], ...]"
+            )
 
         zBase = float(data["Z"])
         zConfig = geneSpaceConfig.get("Z", {})
         zMin = float(zConfig.get("low", zBase))
 
-        if sourcePos[2] <= margin or sourcePos[2] >= zMin - margin:
-            return False, (
-                f"source_pos z={sourcePos[2]} puede quedar fuera "
-                f"para Z_min={zMin}"
-            )
+        for i, sourcePos in enumerate(sourcePositions):
+            if sourcePos[2] <= margin or sourcePos[2] >= zMin - margin:
+                return False, (
+                    f"source_pos[{i}] z={sourcePos[2]} puede quedar fuera "
+                    f"para Z_min={zMin}"
+                )
 
         if keepSymmetry:
             return self.validateSymmetricGeneSpaceSafety(
                 baseVertices=baseVertices,
                 audienceArea=audienceArea,
-                sourcePos=sourcePos,
+                sourcePositions=sourcePositions,
                 geneSpaceConfig=geneSpaceConfig,
                 margin=margin,
             )
@@ -38,7 +49,7 @@ class GeneSpaceValidator:
         return self.validateNormalGeneSpaceSafety(
             baseVertices=baseVertices,
             audienceArea=audienceArea,
-            sourcePos=sourcePos,
+            sourcePositions=sourcePositions,
             geneSpaceConfig=geneSpaceConfig,
             margin=margin,
         )
@@ -47,7 +58,7 @@ class GeneSpaceValidator:
         self,
         baseVertices,
         audienceArea,
-        sourcePos,
+        sourcePositions,
         geneSpaceConfig,
         margin,
     ):
@@ -75,7 +86,7 @@ class GeneSpaceValidator:
             vertexOptions.append(options)
 
         audiencePolygon = self.sortedPolygon(audienceArea)
-        sourcePoint = sourcePos[:2]
+        sourcePoints = sourcePositions[:, :2]
 
         nChecked = 0
 
@@ -86,7 +97,7 @@ class GeneSpaceValidator:
             ok, message = self.validateRoomPolygon(
                 roomPolygon=roomPolygon,
                 audiencePolygon=audiencePolygon,
-                sourcePoint=sourcePoint,
+                sourcePoints=sourcePoints,
                 margin=margin,
                 nChecked=nChecked,
             )
@@ -100,7 +111,7 @@ class GeneSpaceValidator:
         self,
         baseVertices,
         audienceArea,
-        sourcePos,
+        sourcePositions,
         geneSpaceConfig,
         margin,
     ):
@@ -136,7 +147,7 @@ class GeneSpaceValidator:
             masterOptions.append(options)
 
         audiencePolygon = self.sortedPolygon(audienceArea)
-        sourcePoint = sourcePos[:2]
+        sourcePoints = sourcePositions[:, :2]
 
         nChecked = 0
 
@@ -167,7 +178,7 @@ class GeneSpaceValidator:
             ok, message = self.validateRoomPolygon(
                 roomPolygon=roomPolygon,
                 audiencePolygon=audiencePolygon,
-                sourcePoint=sourcePoint,
+                sourcePoints=sourcePoints,
                 margin=margin,
                 nChecked=nChecked,
             )
@@ -198,7 +209,7 @@ class GeneSpaceValidator:
         self,
         roomPolygon,
         audiencePolygon,
-        sourcePoint,
+        sourcePoints,
         margin,
         nChecked,
     ):
@@ -216,16 +227,17 @@ class GeneSpaceValidator:
                 f"en combinación extrema {nChecked}"
             )
 
-        if not self.pointInsidePolygonWithMargin(
-            sourcePoint,
-            roomPolygon,
-            margin,
-        ):
-            return False, (
-                f"source_pos={sourcePoint.tolist()} puede quedar fuera "
-                f"o demasiado cerca del borde "
-                f"en combinación extrema {nChecked}"
-            )
+        for i, sourcePoint in enumerate(sourcePoints):
+            if not self.pointInsidePolygonWithMargin(
+                sourcePoint,
+                roomPolygon,
+                margin,
+            ):
+                return False, (
+                    f"source_pos[{i}]={sourcePoint.tolist()} puede quedar fuera "
+                    f"o demasiado cerca del borde "
+                    f"en combinación extrema {nChecked}"
+                )
 
         if not self.polygonInsidePolygonWithMargin(
             audiencePolygon,

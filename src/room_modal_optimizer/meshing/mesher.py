@@ -14,7 +14,7 @@ class Mesher:
         self.floor = None
         self.ceiling = None
         self.walls = []
-        self.source = None
+        self.source = []
         
         self.floor_pts = None
         self.ceiling_pts = None
@@ -31,7 +31,7 @@ class Mesher:
         self.floor = None
         self.ceiling = None
         self.walls = []
-        self.source = None
+        self.source = []
         self.intersection_error = False
         
         gmsh.initialize()
@@ -158,17 +158,6 @@ class Mesher:
             for i in range(len(ceiling_pts))
         ]
         
-        """
-        Print to check intersections in tests/meshing/check-polygon.py 
-        print("floor_pts:")
-        for i, p in enumerate(self.floor_pts):
-            print(f"F{i+1}: {p}")
-
-        print("ceiling_pts:")
-        for i, p in enumerate(self.ceiling_pts):
-            print(f"C{i+1}: {p}")
-        """
-        
         cl_ceiling = factory.addCurveLoop(ceiling_lines)
         ceiling = factory.addPlaneSurface([cl_ceiling])
         
@@ -194,15 +183,17 @@ class Mesher:
         # Volume
         sl = factory.addSurfaceLoop([floor, ceiling] + walls)
         volume = factory.addVolume([sl])
-        
+                
         if self.source_pos is not None:
-            sphere = self.addSourceSphereVolume()
+            spheres = self.addSourceSphereVolume()
+
             out, out_map = gmsh.model.occ.cut(
                 [(3, volume)],
-                [(3, sphere)],
+                [(3, sphere) for sphere in spheres],
                 removeObject=True,
                 removeTool=True
             )
+
             self.volume = out[0][1]
             
         else:
@@ -213,21 +204,32 @@ class Mesher:
             
     
     def addSourceSphereVolume(self, radius=0.1):
-        x, y, z = self.source_pos
-        sphere = gmsh.model.occ.addSphere(x, y, z, radius)
+        spheres = []
+        for source in self.source_pos:
+            x, y, z = source
+            spheres.append(gmsh.model.occ.addSphere(x, y, z, radius))
         
-        return sphere
+        return spheres
     
     def setTagsWithCenterOfMass(self):
-        source_x, source_y, source_z = self.source_pos
         Lz = self.params["Z"]
 
         for dim, tag in gmsh.model.getEntities(2):
             cx, cy, cz = gmsh.model.occ.getCenterOfMass(dim, tag)
-            distance_to_source = ((cx - source_x)**2 + (cy - source_y)**2 + (cz - source_z)**2)**0.5
-            if distance_to_source < 1e-6:
-                self.source = tag
+
+            is_source = False
+
+            for source_x, source_y, source_z in self.source_pos:
+                distance_to_source = ((cx - source_x)**2 + (cy - source_y)**2 + (cz - source_z)**2)**0.5
+
+                if distance_to_source < 1e-6:
+                    is_source = True
+                    break
+
+            if is_source:
+                self.source.append(tag)
                 continue
+
             if abs(cz - 0.0) < 1e-6:
                 self.floor = tag
             elif abs(cz - Lz) < 1e-6:
@@ -248,8 +250,8 @@ class Mesher:
         gmsh.model.addPhysicalGroup(2, self.walls, 4)
         gmsh.model.setPhysicalName(2, 4, "Walls")
         
-        if self.source is not None:
-            gmsh.model.addPhysicalGroup(2, [self.source], 5)
+        if self.source:
+            gmsh.model.addPhysicalGroup(2, self.source, 5)
             gmsh.model.setPhysicalName(2, 5, "Source")
         
     def generateMesh(self, dim=3):

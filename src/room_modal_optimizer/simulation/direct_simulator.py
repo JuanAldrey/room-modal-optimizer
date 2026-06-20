@@ -50,6 +50,11 @@ class DirectSimulator:
         self.use_impedance = use_impedance
         if freqs is not None:
             self.freqs = np.asarray(freqs, dtype=float)
+        self.source_strength_values = self.calculateSourceVelocity94dBSPL(
+            self.freqs,
+            sourceRadius=0.10,
+            refDistance=1.0,
+        )
         self.wall_z_value = wall_z
         self.floor_z_value = floor_z
         self.ceiling_z_value = ceiling_z
@@ -96,7 +101,7 @@ class DirectSimulator:
 
         self.k = fem.Constant(self.domain, default_scalar_type(0))
         self.omega = fem.Constant(self.domain, default_scalar_type(0))
-        self.source_strength = fem.Constant(self.domain, default_scalar_type(0.01))
+        self.source_strength = fem.Constant(self.domain, default_scalar_type(0.0))
         
         self.wall_z = fem.Constant(self.domain, default_scalar_type(self.wall_z_value))
         self.floor_z = fem.Constant(self.domain, default_scalar_type(self.floor_z_value))
@@ -134,6 +139,10 @@ class DirectSimulator:
             self.k.value = 2 * np.pi * freq / self.c
             self.omega.value = 2 * np.pi * freq
 
+            self.source_strength.value = default_scalar_type(
+                self.source_strength_values[nf]
+            )
+
             self.direct_problem.solve()
             self.p_a.x.scatter_forward()
 
@@ -161,3 +170,26 @@ class DirectSimulator:
         self.spl_response = 20 * np.log10(
             p / np.sqrt(2) / 2e-5
         )
+
+    def calculateSourceVelocity94dBSPL(self, freqs, sourceRadius=0.10, refDistance=1.0):
+        freqs = np.asarray(freqs, dtype=float)
+
+        pRef = 2e-5
+        pTargetRms = pRef * 10.0 ** (94.0 / 20.0)
+
+        a = float(sourceRadius)
+        r = float(refDistance)
+
+        sourceVelocityRms = np.zeros_like(freqs, dtype=float)
+
+        for i, freq in enumerate(freqs):
+            k = 2.0 * np.pi * freq / self.c
+
+            sourceVelocityRms[i] = (
+                pTargetRms
+                * r
+                * np.sqrt(1.0 + (k * a) ** 2)
+                / (self.rho0 * self.c * k * a ** 2)
+            )
+
+        return np.sqrt(2.0) * sourceVelocityRms

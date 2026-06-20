@@ -46,7 +46,7 @@ base_params = {
         "Z": 3.0,
 
         # Fuente centrada en x, no pegada a pared
-        "source_pos": [0.0, 3.3, 1.5],
+        "source_pos": [[1.0, 3.3, 1.5], [0.0, 3.3, 1.5]],
     }
 }
 

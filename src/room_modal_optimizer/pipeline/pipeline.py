@@ -235,15 +235,18 @@ class Pipeline:
             label="Possible mics",
         )
 
-        sourcePos = np.asarray(params["data"]["source_pos"], dtype=float)
+        sourcePositions = np.asarray(params["data"]["source_pos"], dtype=float)
 
         plt.scatter(
-            sourcePos[0],
-            sourcePos[1],
+            sourcePositions[:, 0],
+            sourcePositions[:, 1],
             s=80,
             marker="*",
-            label="Source",
+            label="Sources",
         )
+
+        for i, source in enumerate(sourcePositions):
+            plt.text(source[0], source[1], f"S{i + 1}", fontsize=9)
 
         if selectedMicPositions is not None:
             selectedMicPositions = np.asarray(selectedMicPositions, dtype=float)

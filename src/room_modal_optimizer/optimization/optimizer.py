@@ -4,6 +4,7 @@ import pygad
 import os
 import time
 import json
+import shutil
 from pathlib import Path
 
 from room_modal_optimizer.pipeline.pipeline import Pipeline
@@ -13,7 +14,7 @@ from room_modal_optimizer.evaluation.evaluator import Evaluator
 from room_modal_optimizer.optimization.gene_space_validator import GeneSpaceValidator
 
 class Optimizer:
-    def __init__(self, base_params, gene_space_config, minMicDistance=0.25, keepSymmetry=False):
+    def __init__(self, base_params, gene_space_config, sol_per_pop=12, n_generations=50, minMicDistance=0.25, keepSymmetry=False):
         self.total_runtime_s = None
         self.keepSymmetry = keepSymmetry
         self.base_params = base_params
@@ -21,6 +22,8 @@ class Optimizer:
         self.genes = []
         self.gene_space_validator = GeneSpaceValidator()
         self.gene_space = self.define_gene_space(gene_space_config)
+        self.sol_per_pop = sol_per_pop
+        self.n_generations = n_generations
         self.minMicDistance = minMicDistance
         self.resultsDir = Path("ga_results")
         self.resultsDir.mkdir(parents=True, exist_ok=True)
@@ -48,6 +51,9 @@ class Optimizer:
         print("================================\n")
 
         params, micPositions = self.get_history()
+
+        if self.resultsDir.exists():
+            shutil.rmtree(self.resultsDir)
 
         return params, micPositions
 
@@ -288,30 +294,32 @@ class Optimizer:
         print("Worst fitness:", worst_fitness)
         print("==============================\n")
     
-    # TODO: investigate better GA params
     def create_ga_instance(self):
         self.ga_instance = pygad.GA(
-            num_generations=4,
-            sol_per_pop=10,
-            num_parents_mating=4,
+            num_generations=self.n_generations,
+            sol_per_pop=self.sol_per_pop,
+            num_parents_mating=6,
 
             num_genes=len(self.gene_space),
             gene_space=self.gene_space,
 
             fitness_func=self.fitness_func,
 
-            parallel_processing=["process", 1],
+            parent_selection_type="tournament",
+            K_tournament=3,
 
-            crossover_type="single_point",
+            crossover_type="two_points",
+            crossover_probability=0.85,
 
-            mutation_type="random",
-            mutation_probability=0.15,
+            mutation_type="adaptive",
+            mutation_num_genes=[4, 1],
 
-            keep_elitism=2,
+            keep_elitism=1,
 
             on_generation=self.on_generation,
 
             random_seed=42,
+            stop_criteria=["saturate_12"],
         )
 
     def get_history(self):
