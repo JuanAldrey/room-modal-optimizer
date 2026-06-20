@@ -4,7 +4,6 @@ import pygad
 import os
 import time
 import json
-import shutil
 from pathlib import Path
 
 from room_modal_optimizer.pipeline.pipeline import Pipeline
@@ -14,7 +13,18 @@ from room_modal_optimizer.evaluation.evaluator import Evaluator
 from room_modal_optimizer.optimization.gene_space_validator import GeneSpaceValidator
 
 class Optimizer:
-    def __init__(self, base_params, gene_space_config, sol_per_pop=12, n_generations=50, minMicDistance=0.25, keepSymmetry=False):
+    def __init__(
+        self,
+        base_params,
+        gene_space_config,
+        sol_per_pop=12,
+        n_generations=50,
+        minMicDistance=0.25,
+        keepSymmetry=False,
+        runName=None,
+        savePlots=True,
+        random_seed=42
+    ):
         self.total_runtime_s = None
         self.keepSymmetry = keepSymmetry
         self.base_params = base_params
@@ -25,8 +35,22 @@ class Optimizer:
         self.sol_per_pop = sol_per_pop
         self.n_generations = n_generations
         self.minMicDistance = minMicDistance
+        self.savePlots = savePlots
+        self.random_seed=random_seed
+
         self.resultsDir = Path("ga_results")
         self.resultsDir.mkdir(parents=True, exist_ok=True)
+
+        if runName is None:
+            runName = time.strftime(f"ga_%Y%m%d_%H%M%S_pid_{os.getpid()}")
+
+        self.runName = runName
+        self.runDir = self.resultsDir / self.runName
+        self.solutionsDir = self.runDir / "solutions"
+        self.plotsDir = self.runDir / "plots"
+
+        self.solutionsDir.mkdir(parents=True, exist_ok=True)
+        self.plotsDir.mkdir(parents=True, exist_ok=True)
 
         self.fitness_history = {
             "generation": [],
@@ -36,6 +60,8 @@ class Optimizer:
         }
 
     def run(self):
+        print(f"\nGA results directory: {self.runDir}\n")
+
         self.create_ga_instance()
 
         startTime = time.perf_counter()
@@ -50,12 +76,12 @@ class Optimizer:
         print(f"Total runtime: {self.total_runtime_s / 60:.2f} min")
         print("================================\n")
 
-        params, micPositions = self.get_history()
+        bestResults = self.get_best_results()
+        bestResult = bestResults[0]
 
-        if self.resultsDir.exists():
-            shutil.rmtree(self.resultsDir)
+        self.save_run_outputs(bestResult)
 
-        return params, micPositions
+        return bestResults
 
     def solution_to_params(self, solution):
         params = copy.deepcopy(self.base_params)
@@ -252,7 +278,7 @@ class Optimizer:
             fitness = 1.0 / (1.0 + abs(idx))
             print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
-        with open(self.resultsDir / f"{room_name}.json", "w", encoding="utf-8") as f:
+        with open(self.solutionsDir / f"{room_name}.json", "w", encoding="utf-8") as f:
             json.dump({
                 "room_name": room_name,
                 "generation": int(generation),
@@ -295,10 +321,13 @@ class Optimizer:
         print("==============================\n")
     
     def create_ga_instance(self):
+        if self.sol_per_pop < 3:
+            raise ValueError("sol_per_pop must be at least 3 for GA optimization.")
+
         self.ga_instance = pygad.GA(
             num_generations=self.n_generations,
             sol_per_pop=self.sol_per_pop,
-            num_parents_mating=6,
+            num_parents_mating = min(6, self.sol_per_pop - 1),
 
             num_genes=len(self.gene_space),
             gene_space=self.gene_space,
@@ -311,15 +340,16 @@ class Optimizer:
             crossover_type="two_points",
             crossover_probability=0.85,
 
-            mutation_type="adaptive",
-            mutation_num_genes=[4, 1],
+            mutation_type="random",
+            mutation_probability=0.15,
 
             keep_elitism=1,
 
             on_generation=self.on_generation,
 
-            random_seed=42,
+            random_seed=self.random_seed,
             stop_criteria=["saturate_12"],
+            save_best_solutions=True,
         )
 
     def get_history(self):
@@ -333,10 +363,10 @@ class Optimizer:
 
         return bestResult["params"], bestResult["best_mic_positions"]
     
-    def get_best_result(self):
+    def get_best_results(self):
         history = []
 
-        for resultPath in self.resultsDir.glob("*.json"):
+        for resultPath in self.solutionsDir.glob("*.json"):
             with open(resultPath, "r", encoding="utf-8") as f:
                 result = json.load(f)
 
@@ -349,6 +379,51 @@ class Optimizer:
         )
 
         if len(history) == 0:
-            return None
+            raise RuntimeError("No GA results were generated.")
 
-        return history[0]
+        return history[0:10]
+    
+    def save_run_outputs(self, bestResult):
+        with open(self.runDir / "fitness_history.json", "w", encoding="utf-8") as f:
+            json.dump(self.fitness_history, f, indent=4)
+
+        with open(self.runDir / "best_result.json", "w", encoding="utf-8") as f:
+            json.dump(bestResult, f, indent=4)
+
+        summary = {
+            "run_name": self.runName,
+            "total_runtime_s": self.total_runtime_s,
+            "total_runtime_min": self.total_runtime_s / 60.0,
+            "sol_per_pop": self.sol_per_pop,
+            "n_generations": self.n_generations,
+            "num_genes": len(self.gene_space),
+            "minMicDistance": self.minMicDistance,
+            "keepSymmetry": self.keepSymmetry,
+            "best_room_name": bestResult["room_name"],
+            "best_idx": bestResult["idx"],
+            "best_fitness": bestResult["fitness"],
+            "results_dir": str(self.runDir),
+        }
+
+        with open(self.runDir / "run_summary.json", "w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=4)
+
+        if self.savePlots:
+            self.save_ga_plots()
+
+    def save_ga_plots(self):
+        self.ga_instance.plot_fitness(
+            title="GA fitness convergence",
+            xlabel="Generation",
+            ylabel="Fitness",
+            save_dir=str(self.plotsDir / "fitness.png"),
+        )
+
+        self.ga_instance.plot_genes(
+            solutions="best",
+            graph_type="plot",
+            title="Best solution genes evolution",
+            xlabel="Generation",
+            ylabel="Gene value",
+            save_dir=str(self.plotsDir / "genes_best.png"),
+        )

@@ -46,13 +46,17 @@ base_params = {
         "Z": 3.0,
 
         # Fuente centrada en x, no pegada a pared
-        "source_pos": [[1.0, 3.3, 1.5], [0.0, 3.3, 1.5]],
+        "source_pos": [[0, 3, 1.5]],
     }
 }
 
 # Run GA to find optimized room
-optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.25, keepSymmetry=True)
-params, micPositions = optimizer.run()
+optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.5, keepSymmetry=True)
+bestResults = optimizer.run()
+
+bestResult = bestResults[0]
+params = bestResult["params"]
+micPositions = bestResult["best_mic_positions"]
 
 # Calculate best mic positions for initial room with pipeline
 mesher = Mesher()

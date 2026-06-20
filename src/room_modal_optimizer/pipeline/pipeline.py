@@ -9,6 +9,9 @@ class Pipeline:
         self.evaluator = evaluator
         self.failedRooms = []
 
+        self.savePlantPlot = True
+        self.saveMicPlots = True
+
     def run(self, params, room_name='room', minMicDistance=0.5, nMics=4):
         # Generate mesh
         meshPath = self.mesher.create(params, lc=0.28, source_pos=params["data"]["source_pos"], room_name=room_name)
@@ -26,17 +29,18 @@ class Pipeline:
         )
         print("Amount of possible microphone positions:", possibleMicPositions.shape)
 
-        plotsDir = Path("data") / room_name / "plots"
-        plotsDir.mkdir(parents=True, exist_ok=True)
+        if self.savePlantPlot:
+            plotsDir = Path("data") / room_name / "plots/plants"
 
-        # Plots for documenting
-        self.plotMicLayout(
-            params=params,
-            possibleMicPositions=possibleMicPositions,
-            selectedMicPositions=None,
-            title="Possible mic positions",
-            outputPath=plotsDir / "possible_mic_positions.png",
-        )
+            plotsDir.mkdir(parents=True, exist_ok=True)
+
+            self.plotMicLayout(
+                params=params,
+                possibleMicPositions=possibleMicPositions,
+                selectedMicPositions=None,
+                title="Possible mic positions",
+                outputPath=plotsDir / "possible_mic_positions.png",
+            )
 
         # Calculate transfer function from source to all microphones
         freqsOut, splResponses = self.directSimulator.simulate(
@@ -83,15 +87,14 @@ class Pipeline:
 
 
                 # Plot for documenting
-                """
-                self.plotMicLayout(
-                    params=params,
-                    possibleMicPositions=possibleMicPositions,
-                    selectedMicPositions=bestMicPositions,
-                    title=f"New best MSFD = {bestMsfd:.3f}",
-                    outputPath=plotsDir / f"new_best_{len(str(bestMsfd))}_{bestMsfd:.3f}.png",
-                )
-                """
+                if self.saveMicPlots:
+                    self.plotMicLayout(
+                        params=params,
+                        possibleMicPositions=possibleMicPositions,
+                        selectedMicPositions=bestMicPositions,
+                        title=f"New best MSFD = {bestMsfd:.3f}",
+                        outputPath=plotsDir / f"new_best_{len(str(bestMsfd))}_{bestMsfd:.3f}.png",
+                    )
 
         bestMicPositions = possibleMicPositions[bestCombo]
 
