@@ -2,5 +2,7 @@
     "python.analysis.extraPaths": [
         "./src/core/meshing",
         "./src/core"
-    ]
+    ],
+    "python-envs.defaultEnvManager": "ms-python.python:conda",
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

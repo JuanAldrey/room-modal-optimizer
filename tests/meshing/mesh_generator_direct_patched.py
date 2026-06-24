@@ -1,0 +1,74 @@
+from room_modal_optimizer.meshing.mesher import Mesher
+
+params_4_walls_no_angles = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [5.0, 0.0],
+            "V3": [5.0, 5.0],
+            "V4": [0.0, 5.0],
+
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0,
+        },
+        "Z": 3.0
+    }
+}
+params_8_walls_no_angles = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [2.0, -0.2],
+            "V3": [4.0, 0.3],
+            "V4": [4.7, 1.6],
+            "V5": [4.0, 3.0],
+            "V6": [2.4, 3.5],
+            "V7": [0.7, 3.0],
+            "V8": [-0.4, 1.4]
+        },
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0,
+            "W5": 0.0,
+            "W6": 0.0,
+            "W7": 0.0,
+            "W8": 0.0
+        },
+        "Z": 3.0
+    }
+}
+
+params_8_walls_angled = {
+    "data": {
+        "vertices": {
+            "V1": [0.0, 0.0],
+            "V2": [2.0, -0.2],
+            "V3": [4.0, 0.3],
+            "V4": [4.7, 1.6],
+            "V5": [4.0, 3.0],
+            "V6": [2.4, 3.5],
+            "V7": [0.7, 3.0],
+            "V8": [-0.4, 1.4]
+        },
+        "walls": {
+            "W1": 3.0,
+            "W2": 0.0,
+            "W3": 0.3,
+            "W4": 5.0,
+            "W5": 0.0,
+            "W6": 5.0,
+            "W7": -3.0,
+            "W8": -3.0
+        },
+        "Z": 3.0
+    }
+}
+
+mesher = Mesher()
+mesher.create(params_8_walls_angled, room_name="rectangular", visualize=True, source_pos=[[2, 1.5, 1.5]], patch=True)
