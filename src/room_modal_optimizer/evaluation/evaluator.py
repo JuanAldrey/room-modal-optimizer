@@ -21,49 +21,45 @@ class Evaluator:
     @staticmethod
     def magnitude_deviation(response_db):
         """
-        Calcula la desviación en magnitud (MD).
+        Calcula la Magnitude Deviation (MD) según MSFD.
 
-        Se toma la respuesta promedio entre receptores y se mide su
-        desviación respecto de su propio nivel medio. De esta forma,
-        la métrica penaliza la ondulación espectral, no el nivel absoluto.
+        Para cada receptor se calcula la desviación estándar de su respuesta
+        en frecuencia. Luego se promedian esas desviaciones entre receptores.
 
         Inputs:
             - response_db: array [n_receivers, n_freqs] o [n_freqs].
 
         Output:
-            - md: float.
+            - md: float [dB].
         """
 
         response_db = np.asarray(response_db, dtype=float)
 
         if response_db.ndim == 1:
-            mean_response = response_db
-        elif response_db.ndim == 2:
-            mean_response = np.mean(response_db, axis=0)
-        else:
+            return float(np.std(response_db, ddof=1))
+
+        if response_db.ndim != 2:
             raise ValueError(
                 "response_db debe tener forma [n_freqs] o [n_receivers, n_freqs]."
             )
 
-        mean_level = np.mean(mean_response)
+        mdByReceiver = np.std(response_db, axis=1, ddof=1)
 
-        md = np.mean(np.abs(mean_response - mean_level))
-
-        return float(md)
+        return float(np.mean(mdByReceiver))
 
     @staticmethod
     def spatial_deviation(response_db):
         """
-        Calcula la desviación espacial (SD).
+        Calcula la Spatial Deviation (SD) según MSFD.
 
-        Para cada frecuencia se calcula el desvío estándar entre receptores,
+        Para cada frecuencia se calcula la desviación estándar entre receptores,
         y luego se promedia en frecuencia.
 
         Inputs:
             - response_db: array [n_receivers, n_freqs] o [n_freqs].
 
         Output:
-            - sd: float.
+            - sd: float [dB].
         """
 
         response_db = np.asarray(response_db, dtype=float)
@@ -73,12 +69,17 @@ class Evaluator:
 
         if response_db.ndim != 2:
             raise ValueError(
-                "response_db debe tener forma [n_freqs] o [n_receivers, n_freqs]."
+                "response_db debe tener forma [n_receivers, n_freqs]."
             )
 
-        sd_by_freq = np.std(response_db, axis=0)
+        nReceivers = response_db.shape[0]
 
-        sd = np.mean(sd_by_freq)
+        if nReceivers < 2:
+            return 0.0
+
+        sdByFreq = np.std(response_db, axis=0, ddof=1)
+
+        sd = np.mean(sdByFreq)
 
         return float(sd)
 

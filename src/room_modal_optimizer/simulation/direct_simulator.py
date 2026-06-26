@@ -3,6 +3,8 @@ from dolfinx import fem, default_scalar_type
 from dolfinx.io import gmsh as gmshio
 from dolfinx.fem.petsc import LinearProblem
 from .microphone import Microphone
+from .resonator_impedances import Z_HELMHOLTZ, Z_MEMBRANA, Z_PERFORADO
+
 import ufl
 import numpy as np
 
@@ -44,7 +46,20 @@ class DirectSimulator:
         # Room name
         self.room_name = None
 
-    def simulate(self, mesh_path, mic_positions, order=1, room_name='room', freqs=None, use_impedance=True, wall_z=25.0 + 0j, floor_z=25.0 + 0j, ceiling_z=25.0 + 0j):
+    def simulate(
+            self, 
+            mesh_path, 
+            mic_positions, 
+            order=1, 
+            room_name='room', 
+            freqs=None, 
+            use_impedance=True, 
+            wall_z=25.0 + 0j, 
+            floor_z=25.0 + 0j, 
+            ceiling_z=25.0 + 0j,
+            patch=False,
+            impedance_mappings=None
+            ):
         self.room_name = room_name
         self.order = order
         self.use_impedance = use_impedance
@@ -58,6 +73,10 @@ class DirectSimulator:
         self.wall_z_value = wall_z
         self.floor_z_value = floor_z
         self.ceiling_z_value = ceiling_z
+
+        self.patch = patch
+        self.impedance_mappings = impedance_mappings
+        self.patch_z = {}
 
         self.loadMesh(mesh_path)
         self.setup()
@@ -102,7 +121,7 @@ class DirectSimulator:
         self.k = fem.Constant(self.domain, default_scalar_type(0))
         self.omega = fem.Constant(self.domain, default_scalar_type(0))
         self.source_strength = fem.Constant(self.domain, default_scalar_type(0.0))
-        
+
         self.wall_z = fem.Constant(self.domain, default_scalar_type(self.wall_z_value))
         self.floor_z = fem.Constant(self.domain, default_scalar_type(self.floor_z_value))
         self.ceiling_z = fem.Constant(self.domain, default_scalar_type(self.ceiling_z_value))
@@ -112,9 +131,19 @@ class DirectSimulator:
         
         a = ufl.inner(ufl.grad(self.p), ufl.grad(self.v)) * ufl.dx - self.k**2 * ufl.inner(self.p, self.v) * ufl.dx
         if self.use_impedance:
+            if self.patch:
+                if "CeilingRest" in self.tags:
+                    z = fem.Constant(self.domain, default_scalar_type(self.ceiling_z_value))
+                    a += 1j * self.k / z * self.p * ufl.conj(self.v) * self.ds(self.tags["CeilingRest"])
+                for tag, resonatorType  in self.impedance_mappings.items():
+                    zInitial = self.get_impedance_value(resonatorType, freqIndex=0)
+                    self.patch_z[tag] = fem.Constant(self.domain, default_scalar_type(zInitial))
+                    a += 1j * self.k / self.patch_z[tag] * self.p * ufl.conj(self.v) * self.ds(tag)
+            else:
+                a += 1j * self.k / self.ceiling_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Ceiling"])
+                a += 1j * self.k / self.wall_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Walls"])
+
             a += 1j * self.k / self.floor_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Floor"])
-            a += 1j * self.k / self.ceiling_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Ceiling"])
-            a += 1j * self.k / self.wall_z * self.p * ufl.conj(self.v) * self.ds(self.tags["Walls"])
         L = - 1j * self.omega * self.rho0 * self.source_strength * ufl.conj(self.v) * self.ds(self.tags["Source"])
         
         self.direct_problem = LinearProblem(
@@ -142,6 +171,15 @@ class DirectSimulator:
             self.source_strength.value = default_scalar_type(
                 self.source_strength_values[nf]
             )
+
+            if self.patch:
+                for tag, resonatorType in self.impedance_mappings.items():
+                    zValue = self.get_impedance_value(
+                        resonatorType=resonatorType,
+                        freqIndex=nf
+                    )
+
+                    self.patch_z[tag].value = default_scalar_type(zValue)
 
             self.direct_problem.solve()
             self.p_a.x.scatter_forward()
@@ -193,3 +231,20 @@ class DirectSimulator:
             )
 
         return np.sqrt(2.0) * sourceVelocityRms
+    
+    def get_impedance_value(self, resonatorType, freqIndex):
+        resonatorType = int(resonatorType)
+
+        if resonatorType == 0:
+            return 25.0 + 0j
+
+        if resonatorType == 1:
+            return Z_MEMBRANA[freqIndex]
+
+        if resonatorType == 2:
+            return Z_HELMHOLTZ[freqIndex]
+
+        if resonatorType == 3:
+            return Z_PERFORADO[freqIndex]
+
+        raise ValueError(f"Unknown resonator type: {resonatorType}")

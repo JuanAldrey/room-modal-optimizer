@@ -1,8 +1,7 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 import matplotlib.pyplot as plt
-
-room_name = "testing_direct"
+room_name = "testing_patched"
 
 params_8_walls_angled = {
     "data": {
@@ -30,13 +29,23 @@ params_8_walls_angled = {
     }
 }
 
-# lc chosen from highest frequency:
-# lambda_min = c / f_max = 343 / 200 = 1.715 m
-# Use ~6 elems per wavelength:
-# lc = 1.715 / 6 = 0.286 m
-# Chosen: lc = 0.25 m
 mesher = Mesher()
-mesh_path = mesher.create(params_8_walls_angled, room_name=room_name, visualize=False, source_pos=[(2.5, 2.5, 1.5)])
+mesh_path, phyisical_tags, patchedArea = mesher.create(params_8_walls_angled, room_name="rectangular", visualize=False, source_pos=[[2, 2.5, 1.5]], patch=True)
+
+def createPatchImpedanceByTag(physicalTags, patchImpedance=25.0):
+    return {
+        tag: patchImpedance
+        for name, tag in physicalTags.items()
+        if (
+            name.startswith("CeilingPatch_")
+            or name.startswith("WallPatch_")
+        )
+    }
+
+patchImpedanceByTag = createPatchImpedanceByTag(
+    phyisical_tags,
+    patchImpedance=25.0
+)
 
 directSimulator = DirectSimulator()
 mic_positions = [
@@ -47,13 +56,15 @@ mic_positions = [
     (2, 1, 2.5),
     (1, 3, 1.5),
     (1.5, 1.3, 1.5),
-    (2.2, 1.7, 1.5),
+    (2.2, 1.7, 1.5)
 ]
 
 freqs, spl_responses = directSimulator.simulate(
     mesh_path,
     mic_positions=mic_positions,
     room_name=room_name,
+    patch=True,
+    impedance_mappings=patchImpedanceByTag
 )
 
 labels = [

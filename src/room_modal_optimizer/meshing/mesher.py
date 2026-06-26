@@ -19,7 +19,6 @@ class Mesher:
         self.walls = []
         self.source = []
 
-        # Patched surfaces
         self.ceilingRest = None
         self.ceilingPatches = []
         self.wallPatches = []
@@ -29,6 +28,9 @@ class Mesher:
         
         self.intersection_validator = IntersectionValidator()
         self.intersection_error = False
+
+        self.patchedArea = 0
+        self.physicalTags = {}
     
     def create(self, params, lc=0.28, room_name='room', visualize=False, source_pos=None, patch=False):
         self.params = params['data']
@@ -72,7 +74,10 @@ class Mesher:
             if visualize:
                 gmsh.fltk.run()
 
-            return mesh_path
+            if self.patch:
+                return mesh_path, self.physicalTags, self.patchedArea
+            else:
+                return mesh_path
 
         finally:
             gmsh.finalize()
@@ -224,6 +229,7 @@ class Mesher:
     
     def setTagsWithCenterOfMass(self):
         Lz = self.params["Z"]
+        patchedArea = 0
         if self.patch:
             self.ceilingPatches = []
             self.wallPatches = []
@@ -256,6 +262,7 @@ class Mesher:
                     tolerance = 0.20 * targetArea
 
                     if abs(area - targetArea) <= tolerance:
+                        patchedArea += gmsh.model.occ.getMass(dim, tag)
                         self.ceilingPatches.append(tag)
                     else:
                         self.ceilingRest = tag
@@ -263,10 +270,13 @@ class Mesher:
                     self.ceiling = tag
             else:
                 if self.patch:
+                    patchedArea += gmsh.model.occ.getMass(dim, tag)
                     self.wallPatches.append(tag)
                 else:
                     self.walls.append(tag)
 
+        if self.patch:
+            self.patchedArea = patchedArea
 
     def addPhysicalGroups(self):
         gmsh.model.addPhysicalGroup(3, [self.volume], 1)
@@ -282,23 +292,21 @@ class Mesher:
 
             for counter, ceilingPatch in enumerate(self.ceilingPatches, start=1):
                 physicalTag = 1000 + counter
+                physicalName = f"CeilingPatch_{counter}"
 
                 gmsh.model.addPhysicalGroup(2, [ceilingPatch], physicalTag)
-                gmsh.model.setPhysicalName(
-                    2,
-                    physicalTag,
-                    f"CeilingPatch_{counter}"
-                )
+                gmsh.model.setPhysicalName(2, physicalTag, physicalName)
+
+                self.physicalTags[physicalName] = physicalTag
 
             for counter, wallPatch in enumerate(self.wallPatches, start=1):
                 physicalTag = 2000 + counter
+                physicalName = f"WallPatch_{counter}"
 
                 gmsh.model.addPhysicalGroup(2, [wallPatch], physicalTag)
-                gmsh.model.setPhysicalName(
-                    2,
-                    physicalTag,
-                    f"WallPatch_{counter}"
-                )
+                gmsh.model.setPhysicalName(2, physicalTag, physicalName)
+
+                self.physicalTags[physicalName] = physicalTag
 
         else:
             gmsh.model.addPhysicalGroup(2, [self.ceiling], 3)
