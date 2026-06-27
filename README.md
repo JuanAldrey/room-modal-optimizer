@@ -17,8 +17,6 @@ The acoustic objective is evaluated using frequency-domain FEM simulations and t
 * 3D room geometry generation from 2D floor vertices, wall inclination angles and room height.
 * Gmsh-based mesh generation.
 * Direct frequency-domain FEM simulation using DOLFINx.
-* Modal simulation support.
-* Microphone grid generation inside the audience area.
 * MSFD-based acoustic evaluation.
 * Genetic algorithm optimization using PyGAD.
 * Symmetric room optimization support.
@@ -123,7 +121,7 @@ cd room-modal-optimizer
 Create or activate the project environment:
 
 ```bash
-conda activate room-opt-complex
+conda activate your-env-with-required-dependencies
 ```
 
 Install the package in editable mode:
@@ -153,28 +151,48 @@ base_params = {
     "data": {
         "vertices": {
             "V1": [0.0, 0.0],
-            "V2": [4.0, 0.0],
-            "V3": [4.0, 6.0],
-            "V4": [0.0, 6.0],
+            "V2": [5.0, 0.0],
+            "V3": [5.0, 4.0],
+            "V4": [0.0, 4.0],
         },
-        "W1": 0.0,
-        "W2": 0.0,
-        "W3": 0.0,
-        "W4": 0.0,
-        "Z": 3.0,
-        "source_pos": [2.0, 1.0, 1.2],
+        "walls": {
+            "W1": 0.0,
+            "W2": 0.0,
+            "W3": 0.0,
+            "W4": 0.0,
+        },
         "audience_area": {
-            "V1": [1.0, 2.0],
-            "V2": [3.0, 2.0],
-            "V3": [3.0, 5.0],
-            "V4": [1.0, 5.0],
+            "V1": [1.6, 1.1],
+            "V2": [1.6, 2.3],
+            "V3": [3.4, 2.3],
+            "V4": [3.4, 1.1],
         },
+        "Z": 3.0,
+        "source_pos": [[2.5, 3.2, 1.5], [2.7, 3.2, 1.5]],
     }
 }
 ```
 
 Wall angles are defined in degrees. The room height is defined by `Z`.
 
+Gene spaces are defined following the base params structure, indicating a range of values the GA can randomly select from.
+
+Example:
+
+```python
+gene_space_config = {
+    "vertices": {
+        "V1": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
+        "V2": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
+        "V3": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
+        "V4": {"dx": [-0.20, 0.20], "dy": [-0.20, 0.20]},
+    },
+    "walls": {},
+    "Z": {"low": 3.0, "high": 4.2}
+}
+```
+
+For symmetric rooms, ony vertices from one side should be specified, and angles for walls crossing the axis are not allowed.
 ---
 
 ## Geometry Optimization Example
