@@ -39,6 +39,70 @@ def line_intersect(p1: np.ndarray, d1: np.ndarray,
     return p1 + t * d1
 
 
+def project_point_on_line(p: tuple, a: tuple, b: tuple) -> tuple[float, float]:
+    """Proyección ortogonal del punto p sobre la recta que pasa por a y b."""
+    A = np.array(a, float)
+    d = np.array([b[0] - a[0], b[1] - a[1]], float)
+    norm = np.linalg.norm(d)
+    if norm < 1e-12:
+        return (float(p[0]), float(p[1]))
+    d /= norm
+    proj = A + np.dot(np.array(p, float) - A, d) * d
+    return (float(proj[0]), float(proj[1]))
+
+
+def reflect_point(p: tuple, a: tuple, b: tuple) -> tuple[float, float]:
+    """Refleja el punto p respecto de la recta que pasa por a y b."""
+    proj = np.array(project_point_on_line(p, a, b), float)
+    refl = 2 * proj - np.array(p, float)
+    return (float(refl[0]), float(refl[1]))
+
+
+def point_side(p: tuple, a: tuple, b: tuple) -> float:
+    """
+    Signo (producto cruz) del lado de la recta a→b en el que está p.
+    > 0: a un lado; < 0: al otro; ≈ 0: sobre la recta.
+    """
+    ax, ay = a
+    bx, by = b
+    px, py = p
+    return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+
+
+def clip_polygon_halfplane(
+    poly_pts: list[tuple],
+    point_on_line: tuple,
+    normal: np.ndarray
+) -> list[tuple]:
+    """
+    Recorta un polígono convexo `poly_pts` contra el semiplano
+    {q : dot(q - point_on_line, normal) >= 0}.
+    Sutherland–Hodgman para un solo borde (la recta de simetría).
+    Usado para sombrear visualmente el lado activo en "Symmetric Room".
+    """
+    if not poly_pts:
+        return []
+    out = []
+    p0  = np.array(point_on_line, float)
+    nrm = np.array(normal, float)
+    n   = len(poly_pts)
+    for i in range(n):
+        cur = np.array(poly_pts[i], float)
+        nxt = np.array(poly_pts[(i + 1) % n], float)
+        cur_in = np.dot(cur - p0, nrm) >= 0
+        nxt_in = np.dot(nxt - p0, nrm) >= 0
+        if cur_in:
+            out.append((float(cur[0]), float(cur[1])))
+        if cur_in != nxt_in:
+            d = nxt - cur
+            denom = np.dot(d, nrm)
+            if abs(denom) > 1e-12:
+                t = -np.dot(cur - p0, nrm) / denom
+                inter = cur + t * d
+                out.append((float(inter[0]), float(inter[1])))
+    return out
+
+
 def _polygon_centroid(verts):
     xs = [v[0] for v in verts]
     ys = [v[1] for v in verts]
@@ -144,23 +208,60 @@ def build_geometry_dict(
     floor_verts: list[tuple[float, float]],
     wall_props: list[dict],
     height: float,
-    original_verts: list[tuple[float, float]] | None = None
+    original_verts: list[tuple[float, float]] | None = None,
+    audience_area: list[tuple[float, float]] | None = None,
+    sources: list[tuple[float, float, float]] | None = None,
 ) -> dict:
     """
     Devuelve:
     {
       "data": {
-        "vertices": {"V1": [x, y], ...},
-        "walls":    {"W1": ang, ...},
-        "Z":        h
+        "vertices":      {"V1": [x, y], ...},
+        "walls":         {"W1": ang, ...},
+        "audience_area": {"V1": [x, y], ...},   # opcional
+        "Z":             h,
+        "sources":       [[x, y, z], ...]        # opcional, lista de fuentes
       }
     }
     """
     verts_to_save = original_verts if original_verts is not None else floor_verts
-    return {
-        "data": {
-            "vertices": {f"V{i+1}": [float(x), float(y)] for i,(x,y) in enumerate(verts_to_save)},
-            "walls":    {f"W{i+1}": float(w["tilt_deg"]) for i,w in enumerate(wall_props)},
-            "Z":        float(height)
-        }
+    data = {
+        "vertices": {f"V{i+1}": [float(x), float(y)] for i,(x,y) in enumerate(verts_to_save)},
+        "walls":    {f"W{i+1}": float(w["tilt_deg"]) for i,w in enumerate(wall_props)},
+        "Z":        float(height)
     }
+    if audience_area is not None:
+        data["audience_area"] = {
+            f"V{i+1}": [float(x), float(y)] for i, (x, y) in enumerate(audience_area)
+        }
+    if sources is not None:
+        data["sources"] = [[float(sx), float(sy), float(sz)] for sx, sy, sz in sources]
+    return {"data": data}
+def room_volume(
+    floor_verts: list[tuple[float, float]],
+    ceiling_verts: list[tuple[float, float, float]],
+    height: float
+) -> float:
+    """
+    Volumen exacto del recinto (incluso con paredes inclinadas, donde el
+    techo no es paralelo al piso) usando la fórmula del prismatoide:
+
+        V = h/6 * (A_floor + 4*A_mid + A_ceiling)
+
+    donde A_mid es el área de la sección obtenida promediando cada vértice
+    del piso con su correspondiente vértice del techo (sección a media
+    altura). Para techo plano (todas las inclinaciones en 0) esto se
+    reduce exactamente a A_floor * height.
+    """
+    if not floor_verts or height <= 0:
+        return 0.0
+    ceiling_xy = [(c[0], c[1]) for c in ceiling_verts]
+    a_floor = abs(signed_area(floor_verts))
+    a_ceil  = abs(signed_area(ceiling_xy))
+    mid = [
+        ((floor_verts[i][0] + ceiling_xy[i][0]) / 2,
+         (floor_verts[i][1] + ceiling_xy[i][1]) / 2)
+        for i in range(len(floor_verts))
+    ]
+    a_mid = abs(signed_area(mid))
+    return height / 6.0 * (a_floor + 4 * a_mid + a_ceil)

@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QApplication, QWidget, QFrame, QLabel, QLineEdit,
     QPushButton, QGridLayout, QHBoxLayout, QVBoxLayout,
     QSizePolicy, QGroupBox, QComboBox, QMessageBox,
-    QStackedWidget, QSpacerItem, QTabWidget
+    QTabWidget
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -28,10 +28,25 @@ class RoomState:
                 "Z":        3.0
             }
         }
-        self.msh_path: str = ""
+        self.msh_path:    str  = ""
+        self.room_name:   str  = "Unnamed Room"
+        self.is_symmetric: bool = False
+
+        # ── GA configuration ──────────────────────────────────────
+        self.ga_config: dict = {
+            "vertex_ranges":  [],   # [{"vertex", "xmin", "xmax", "ymin", "ymax", "enabled"}, ...]
+            "wall_ranges":    [],   # [{"wall", "tmin", "tmax", "enabled"}, ...]
+            "height_ranges":  {"zmin": 0.0, "zmax": 0.0, "enabled": True},
+            "output_dir":     "",
+            "target_tr":      0.5,
+        }
 
     def reset(self):
         self.__init__()
+
+    @property
+    def symmetric(self) -> bool:
+        return self.is_symmetric
 
 
 # ── Ventana principal ─────────────────────────────────────────────────────────
@@ -45,21 +60,13 @@ class MainWindow(QWidget):
 
         self.state = RoomState()
 
-        self.stack = QStackedWidget(self)
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(self.stack)
 
-        self.welcome_page = WelcomePage(self)
-        self.main_page    = MainPage(self)
-
-        self.stack.addWidget(self.welcome_page)
-        self.stack.addWidget(self.main_page)
-        self.stack.setCurrentWidget(self.welcome_page)
+        self.main_page = MainPage(self)
+        root.addWidget(self.main_page)
 
     def go_to_main(self):
-        self.main_page.load_state()
-        self.stack.setCurrentWidget(self.main_page)
         design_tab = self.main_page.tabs.widget(0)
         if hasattr(design_tab, "refresh_from_state"):
             design_tab.refresh_from_state()
@@ -159,7 +166,7 @@ class MainPage(QWidget):
         self.tabs = QTabWidget()
         self.tabs.addTab(self._build_room_design_tab(),           "Room Design")
         self.tabs.addTab(self._build_room_optimization_tab(),     "Room Optimization")
-        self.tabs.addTab(self._build_transfer_simulation_tab(),   "Transfer Simulation")
+        self.tabs.addTab(self._build_optimization_results_tab(),  "Optimization Results")
         root.addWidget(self.tabs)
 
     def load_state(self):
@@ -171,17 +178,29 @@ class MainPage(QWidget):
         return RoomDesignTab(self.state)
 
     def _build_room_optimization_tab(self) -> QWidget:
-        from room_optimization import RoomOptimizationTab
-        return RoomOptimizationTab(self.state)
+        from optim_results import RoomOptimizationTab
+        self.opt_tab = RoomOptimizationTab(self.state)
 
-    def _build_transfer_simulation_tab(self) -> QWidget:
-        tab = QWidget()
-        lbl = QLabel("[ Transfer Simulation ]")
-        lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet("color: #555555; font-size: 14pt;")
-        lay = QVBoxLayout(tab)
-        lay.addWidget(lbl)
-        return tab
+        # Cuando termina la optimización, mostramos los resultados en la
+        # tab "Optimization Results" y saltamos automáticamente a ella.
+        self.opt_tab.resultsReady.connect(self._on_optim_results_ready)
+        return self.opt_tab
+
+    def _build_optimization_results_tab(self) -> QWidget:
+        from optim_results import ResultsScreen
+        self.results_tab = ResultsScreen(self.state)
+
+        # Botón "← Back to GA config" dentro de la tab de resultados:
+        # nos lleva de vuelta a la tab "Room Optimization".
+        self.results_tab.backToConfigRequested.connect(
+            lambda: self.tabs.setCurrentIndex(1)
+        )
+        return self.results_tab
+
+    def _on_optim_results_ready(self, payload):
+        bestMsfd, params, bestMicPositions, responses = payload
+        self.results_tab.load_results(bestMsfd, params, bestMicPositions, responses)
+        self.tabs.setCurrentIndex(2)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
@@ -191,5 +210,5 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     apply_theme(app)
     win = MainWindow()
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec())
