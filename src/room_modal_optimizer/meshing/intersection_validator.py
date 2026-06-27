@@ -1,6 +1,13 @@
 import numpy as np
 
 class IntersectionValidator:
+    """
+    Validates self-intersections in 2D polygonal room contours.
+
+    This helper is mainly used to detect invalid floor or ceiling polygons before
+    building the Gmsh geometry. It checks whether non-adjacent polygon edges cross
+    each other, including colinear or touching segment cases.
+    """
     def _orientation(self, a, b, c):
         return (
             (b[0] - a[0]) * (c[1] - a[1])
@@ -42,6 +49,20 @@ class IntersectionValidator:
 
 
     def find_polygon_crossings(self, pts):
+        """
+        Finds crossings between non-adjacent edges of a 2D polygon.
+
+        Adjacent edges are ignored because they naturally share a vertex. The first
+        and last edges are also treated as adjacent. If crossings are found, the
+        method returns metadata describing the crossing edge pairs.
+
+        Args:
+            pts (list[tuple[float, float]]): Polygon vertices as (x, y) points.
+
+        Returns:
+            list[dict]: List of detected crossings. Each dictionary contains the
+            crossed edge indices and the corresponding edge endpoint coordinates.
+        """
         pts = [np.array(p, dtype=float) for p in pts]
         n = len(pts)
 
@@ -75,4 +96,13 @@ class IntersectionValidator:
 
 
     def has_polygon_crossings(self, pts):
+        """
+        Checks whether a 2D polygon has any self-intersections.
+
+        Args:
+            pts (list[tuple[float, float]]): Polygon vertices as (x, y) points.
+
+        Returns:
+            bool: True if at least one crossing is detected, False otherwise.
+        """
         return len(self.find_polygon_crossings(pts)) > 0

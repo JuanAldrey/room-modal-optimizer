@@ -1,17 +1,24 @@
 import numpy as np
 
 class Evaluator:
+    """
+    Computes acoustic objective metrics from simulated frequency responses.
+
+    This class provides static helper methods to convert linear or complex
+    responses to dB and to compute the MSFD metric, including its Magnitude
+    Deviation (MD) and Spatial Deviation (SD) components.
+    """
     @staticmethod
     def pressure_to_db(response, eps=1e-12):
         """
-        Convierte una respuesta compleja o lineal a magnitud en dB.
+        Converts a complex or linear response magnitude to dB.
 
-        Inputs:
-            - response: array. Puede ser complejo o real.
-            - eps: piso numérico para evitar log(0).
+        Args:
+            response (array-like): Complex or real-valued response.
+            eps (float): Numerical floor used to avoid log(0).
 
-        Output:
-            - response_db: array en dB.
+        Returns:
+            np.ndarray: Response magnitude in dB.
         """
 
         response = np.asarray(response)
@@ -21,16 +28,21 @@ class Evaluator:
     @staticmethod
     def magnitude_deviation(response_db):
         """
-        Calcula la Magnitude Deviation (MD) según MSFD.
+        Computes the Magnitude Deviation (MD) component of MSFD.
 
-        Para cada receptor se calcula la desviación estándar de su respuesta
-        en frecuencia. Luego se promedian esas desviaciones entre receptores.
+        For each receiver, the method computes the standard deviation of the
+        frequency response. The final MD value is obtained by averaging those
+        deviations across receivers.
 
-        Inputs:
-            - response_db: array [n_receivers, n_freqs] o [n_freqs].
+        Args:
+            response_db (array-like): Response in dB with shape
+                (n_receivers, n_freqs) or (n_freqs,).
 
-        Output:
-            - md: float [dB].
+        Returns:
+            float: Magnitude Deviation in dB.
+
+        Raises:
+            ValueError: If response_db is not a 1D or 2D array.
         """
 
         response_db = np.asarray(response_db, dtype=float)
@@ -50,16 +62,22 @@ class Evaluator:
     @staticmethod
     def spatial_deviation(response_db):
         """
-        Calcula la Spatial Deviation (SD) según MSFD.
+        Computes the Spatial Deviation (SD) component of MSFD.
 
-        Para cada frecuencia se calcula la desviación estándar entre receptores,
-        y luego se promedia en frecuencia.
+        For each frequency, the method computes the standard deviation across
+        receivers. The final SD value is obtained by averaging those deviations
+        across frequency.
 
-        Inputs:
-            - response_db: array [n_receivers, n_freqs] o [n_freqs].
+        Args:
+            response_db (array-like): Response in dB with shape
+                (n_receivers, n_freqs) or (n_freqs,).
 
-        Output:
-            - sd: float [dB].
+        Returns:
+            float: Spatial Deviation in dB. Returns 0.0 when only one receiver
+            is available.
+
+        Raises:
+            ValueError: If response_db is not a 1D or 2D array.
         """
 
         response_db = np.asarray(response_db, dtype=float)
@@ -92,20 +110,29 @@ class Evaluator:
         eps=1e-12,
     ):
         """
-        Calcula MSFD = wM * MD + wS * SD.
+        Computes the Mean Spatial Frequency Deviation (MSFD).
 
-        Inputs:
-            - response: respuesta fuente-receptor.
-                Si input_is_db=False, puede ser compleja o lineal.
-                Si input_is_db=True, se interpreta como dB.
-                Forma esperada: [n_receivers, n_freqs].
-            - input_is_db: bool.
-            - weight_magnitude: peso de MD.
-            - weight_spatial: peso de SD.
-            - eps: piso numérico para conversión a dB.
+        MSFD is computed as a weighted sum of Magnitude Deviation and Spatial
+        Deviation:
 
-        Outputs:
-            - dict con MSFD, MD, SD y pesos usados.
+            MSFD = weight_magnitude * MD + weight_spatial * SD
+
+        If input_is_db is False, the input response is first converted to dB using
+        pressure_to_db(). If input_is_db is True, the input is assumed to already
+        be expressed in dB.
+
+        Args:
+            response (array-like): Source-receiver response. Expected shape is
+                (n_receivers, n_freqs), although a single receiver response with
+                shape (n_freqs,) is also accepted.
+            input_is_db (bool): If True, response is interpreted as dB. If False,
+                response is interpreted as a linear or complex response.
+            weight_magnitude (float): Weight applied to the MD component.
+            weight_spatial (float): Weight applied to the SD component.
+            eps (float): Numerical floor used when converting to dB.
+
+        Returns:
+            dict: Dictionary containing MSFD, MD, SD and the weights used.
         """
 
         if input_is_db:

@@ -9,6 +9,22 @@ import ufl
 import numpy as np
 
 class DirectSimulator:
+    """
+    Runs direct frequency-domain FEM simulations for room acoustic analysis.
+
+    The class solves the Helmholtz equation on a Gmsh/DOLFINx room mesh and
+    computes the complex pressure response at a set of microphone positions. It
+    supports rigid or impedance boundary conditions, including patch-based
+    impedance assignments for absorber optimization.
+
+    The simulation pipeline loads the mesh, prepares the finite element function
+    space, builds the variational formulation, solves the direct problem for each
+    frequency, evaluates the pressure at the microphones, and converts the result
+    to dB SPL.
+
+    Physical groups defined in the mesh are used to identify the air volume,
+    floor, ceiling, walls, source boundaries and optional absorber patches.
+    """
     def __init__(self):
         # Mesh / geometry
         self.domain = None
@@ -60,6 +76,40 @@ class DirectSimulator:
             patch=False,
             impedance_mappings=None
             ):
+        """
+        Runs the direct frequency-domain FEM simulation for a room mesh.
+
+        This method loads the mesh, sets up the finite element space, creates the
+        microphone receiver object, assembles the Helmholtz variational problem,
+        computes the pressure response over the selected frequency range, and converts
+        the result to SPL.
+
+        The source strength is calibrated to produce 94 dB SPL at 1 m from a pulsating
+        sphere with radius 0.10 m. Surface impedances can be applied either as global
+        floor, wall and ceiling values or, in patch mode, through individual impedance
+        mappings assigned to physical patch tags.
+
+        Args:
+            mesh_path (str | Path): Path to the Gmsh mesh file.
+            mic_positions (list | np.ndarray): Microphone positions as [x, y, z]
+                coordinates.
+            order (int): Polynomial order of the finite element function space.
+            room_name (str): Name used to identify the current room simulation.
+            freqs (array-like | None): Frequencies to simulate in Hz. If None, the
+                simulator uses the default frequency array.
+            use_impedance (bool): If True, applies impedance boundary conditions.
+                If False, boundaries are treated as rigid unless otherwise defined.
+            wall_z (complex): Specific acoustic impedance assigned to wall surfaces.
+            floor_z (complex): Specific acoustic impedance assigned to the floor.
+            ceiling_z (complex): Specific acoustic impedance assigned to the ceiling.
+            patch (bool): If True, enables patch-based impedance assignment.
+            impedance_mappings (dict | None): Mapping between physical patch tags and
+                impedance values used in patch mode.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: Simulated frequencies and SPL response.
+            The SPL response is returned with shape (n_mics, n_freqs).
+        """
         self.room_name = room_name
         self.order = order
         self.use_impedance = use_impedance
@@ -95,6 +145,19 @@ class DirectSimulator:
         return self.freqs, self.spl_response
         
     def loadMesh(self, mesh_path):
+        """
+        Loads a Gmsh mesh and extracts its physical boundary tags.
+
+        The method imports the .msh file into DOLFINx, stores the computational
+        domain, reads the physical groups defined in Gmsh, and creates the exterior
+        facet integration measure used to apply boundary conditions.
+
+        Args:
+            mesh_path (str | Path): Path to the Gmsh .msh mesh file.
+
+        Returns:
+            None
+        """
         print("Loading mesh...")
         mesh_data = gmshio.read_from_msh(mesh_path, MPI.COMM_WORLD, 0, gdim=3)
         self.domain = mesh_data.mesh
@@ -111,6 +174,19 @@ class DirectSimulator:
         )
         
     def setup(self):
+        """
+        Initializes the finite element objects and simulation constants.
+
+        The method creates the Lagrange function space, defines the trial and test
+        functions, allocates the pressure solution function, and initializes the FEM
+        constants used by the frequency-domain Helmholtz formulation.
+
+        It also stores the global impedance values as DOLFINx constants so they can
+        be used directly in the variational problem.
+
+        Returns:
+            None
+        """
         print("Initial setup...")
         self.V = fem.functionspace(self.domain, ("Lagrange", self.order))
         self.p = ufl.TrialFunction(self.V)
@@ -127,6 +203,27 @@ class DirectSimulator:
         self.ceiling_z = fem.Constant(self.domain, default_scalar_type(self.ceiling_z_value))
         
     def setupVariationalFormulation(self):
+        """
+        Builds the weak variational formulation for the direct Helmholtz simulation.
+
+        The method defines the frequency-domain FEM problem using the pressure trial
+        function and test function previously created in setup(). The base formulation
+        corresponds to the Helmholtz equation in the room volume. If impedance
+        boundary conditions are enabled, boundary terms are added for the floor,
+        ceiling and walls.
+
+        In patch mode, impedance terms are assigned individually to patch physical
+        tags using self.impedance_mappings. Each patch impedance is stored as a
+        DOLFINx Constant in self.patch_z so it can be updated later for each simulated
+        frequency.
+
+        The source is modeled as a Neumann boundary condition over the physical group
+        named "Source". The resulting linear system is solved using PETSc with a
+        direct LU factorization through MUMPS.
+
+        Returns:
+            None
+        """
         print("Setting up variational formulation...")
         
         a = ufl.inner(ufl.grad(self.p), ufl.grad(self.v)) * ufl.dx - self.k**2 * ufl.inner(self.p, self.v) * ufl.dx
@@ -159,6 +256,21 @@ class DirectSimulator:
         )
     
     def computeFrequencyResponse(self):
+        """
+        Computes the complex pressure response at the microphone positions.
+
+        The method iterates over all simulation frequencies, updates the wavenumber,
+        angular frequency and source strength constants, and solves the direct FEM
+        problem for each frequency. In patch mode, each patch impedance is also updated
+        according to the current frequency before solving.
+
+        After each solve, the pressure field is evaluated at the microphone positions.
+        The microphone responses are gathered and stored as a frequency
+        response matrix in self.pressure_response.
+
+        Returns:
+            None
+        """
         print("Computing frequency response...")
         pressureRows = []
         
@@ -201,6 +313,18 @@ class DirectSimulator:
             )
             
     def pressureToSpl(self):
+        """
+        Converts the complex pressure response to sound pressure level in dB SPL.
+
+        The method takes the magnitude of self.pressure_response, applies a small
+        lower bound to avoid logarithm errors, converts peak pressure to RMS pressure,
+        and computes SPL using 20 µPa as the reference pressure.
+
+        The result is stored in self.spl_response.
+
+        Returns:
+            None
+        """
         print("Pressure to SPL...")
         eps = 1e-12
         p = np.maximum(np.abs(self.pressure_response), eps)
@@ -210,6 +334,24 @@ class DirectSimulator:
         )
 
     def calculateSourceVelocity94dBSPL(self, freqs, sourceRadius=0.10, refDistance=1.0):
+        """
+        Computes the source velocity needed to produce 94 dB SPL in free field.
+
+        The source is modeled as a pulsating sphere with radius sourceRadius. For each
+        frequency, the method estimates the normal surface velocity required to obtain
+        94 dB SPL RMS at refDistance from the source in free-field conditions.
+
+        The returned values are peak velocity amplitudes, obtained by converting the
+        computed RMS velocities by a factor of sqrt(2).
+
+        Args:
+            freqs (array-like): Frequencies in Hz.
+            sourceRadius (float): Radius of the spherical source in meters.
+            refDistance (float): Reference distance from the source center in meters.
+
+        Returns:
+            np.ndarray: Peak normal velocity amplitudes for each frequency.
+        """
         freqs = np.asarray(freqs, dtype=float)
 
         pRef = 2e-5
@@ -233,6 +375,27 @@ class DirectSimulator:
         return np.sqrt(2.0) * sourceVelocityRms
     
     def get_impedance_value(self, resonatorType, freqIndex):
+        """
+        Returns the impedance value for a resonator type at a given frequency index.
+
+        The method maps integer resonator identifiers to their corresponding impedance
+        arrays. A resonator type of 0 represents the default wall impedance, while
+        types 1, 2 and 3 correspond to the predefined membrane, Helmholtz and
+        perforated absorber impedance curves.
+
+        Args:
+            resonatorType (int): Resonator type identifier. Supported values are:
+                0 for default impedance, 1 for membrane, 2 for Helmholtz and
+                3 for perforated absorber.
+            freqIndex (int): Index of the frequency value in the impedance arrays.
+
+        Returns:
+            complex: Complex impedance value for the selected resonator type and
+            frequency index.
+
+        Raises:
+            ValueError: If the resonator type is not recognized.
+        """
         resonatorType = int(resonatorType)
 
         if resonatorType == 0:

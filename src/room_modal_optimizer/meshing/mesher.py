@@ -4,6 +4,18 @@ from pathlib import Path
 from room_modal_optimizer.meshing.intersection_validator import IntersectionValidator
 
 class Mesher:
+    """
+    Generates Gmsh geometries and finite element meshes for room acoustic simulations.
+
+    The class builds 3D room geometries from floor vertices, wall inclination angles
+    and room height. It supports regular room meshes and patched geometries, where
+    ceiling and wall surfaces are subdivided into individual physical groups for
+    absorber optimization.
+
+    The generated meshes include physical tags for the air volume, floor, ceiling,
+    walls, source boundaries and optional absorber patches, allowing the FEM
+    simulators to assign boundary conditions after importing the mesh.
+    """
     def __init__(self):
         self.params = None
         self.lc = None
@@ -33,6 +45,31 @@ class Mesher:
         self.physicalTags = {}
     
     def create(self, params, lc=0.28, room_name='room', visualize=False, source_pos=None, patch=False):
+        """
+        Creates the Gmsh geometry and finite element mesh for a room.
+
+        This method is the main entry point of the mesher. It receives the room
+        parameters, builds the floor, ceiling, walls and optional source geometry,
+        assigns physical groups, generates the mesh file and finalizes the Gmsh
+        session. If patch mode is enabled, the ceiling and walls are subdivided
+        into absorber patches before meshing.
+
+        Args:
+            params (dict): Dictionary containing the room data under the "data" key.
+            lc (float): Characteristic mesh size used by Gmsh.
+            room_name (str): Name assigned to the Gmsh model and output mesh folder.
+            visualize (bool): If True, opens the Gmsh graphical interface after meshing.
+            source_pos (list | np.ndarray | None): Source position or positions used to
+                create source boundary geometry. If None, no source geometry is added.
+            patch (bool): If True, generates patched ceiling and wall surfaces for
+                absorber optimization.
+
+        Returns:
+            str | tuple | None: Mesh file path when patch is False. When patch is True,
+            returns a tuple containing the mesh file path, the physical tags dictionary
+            and the total patched area. Returns None if a geometry intersection error
+            is detected before mesh generation.
+        """
         self.params = params['data']
         self.lc = lc
         self.room_name = room_name
@@ -83,6 +120,16 @@ class Mesher:
             gmsh.finalize()
         
     def setFloorPoints(self):
+        """
+        Extracts and stores the floor vertices and wall angles from the room parameters.
+
+        Vertices and wall angles are sorted by their numeric key order, such as V1, V2,
+        V3 and W1, W2, W3. After loading the floor polygon, the vertex order is checked
+        and corrected to ensure a counterclockwise orientation.
+
+        Returns:
+            None
+        """
         vertices = self.params["vertices"]
         walls = self.params["walls"]
 
@@ -155,6 +202,20 @@ class Mesher:
         self.ceiling_pts = ceiling_pts
 
     def buildGeometry(self):
+        """
+        Computes and stores the ceiling polygon from the floor polygon and wall angles.
+
+        Each floor wall segment is shifted horizontally according to the room height and
+        the corresponding wall inclination angle. The shifted wall segments are then
+        intersected to obtain the ceiling vertices. The resulting ceiling polygon is
+        validated to detect self-intersections before geometry construction.
+
+        If the computed ceiling polygon contains crossing edges, the method sets
+        self.intersection_error to True.
+
+        Returns:
+            None
+        """
         lc = self.lc
         factory = gmsh.model.occ
         
@@ -220,6 +281,19 @@ class Mesher:
             self.walls = walls
     
     def addSourceSphereVolume(self, radius=0.1):
+        """
+        Creates spherical source volumes at the configured source positions.
+
+        Each position in self.source_pos is used as the center of a Gmsh OCC sphere.
+        These spheres are later used to define source boundary surfaces inside the room
+        geometry.
+
+        Args:
+            radius (float): Radius of each source sphere in meters.
+
+        Returns:
+            list[int]: Gmsh volume tags corresponding to the created source spheres.
+        """
         spheres = []
         for source in self.source_pos:
             x, y, z = source
@@ -228,6 +302,24 @@ class Mesher:
         return spheres
     
     def setTagsWithCenterOfMass(self):
+        """
+        Classifies Gmsh surface entities using their center of mass.
+
+        The method iterates over all 2D entities in the current Gmsh model and assigns
+        their tags to the corresponding room surfaces: floor, ceiling, walls and source
+        boundaries. Source surfaces are identified by comparing their center of mass
+        with the configured source positions.
+
+        In patch mode, ceiling surfaces whose area is close to patchSize squared are
+        classified as ceiling patches, while the remaining ceiling surface is stored as
+        ceilingRest. Wall surfaces are classified as wall patches. The total patched
+        area is accumulated and stored in self.patchedArea.
+
+        This method assumes that the OCC model has already been synchronized.
+
+        Returns:
+            None
+        """
         Lz = self.params["Z"]
         patchedArea = 0
         if self.patch:
@@ -279,6 +371,22 @@ class Mesher:
             self.patchedArea = patchedArea
 
     def addPhysicalGroups(self):
+        """
+        Adds physical groups and names to the Gmsh model.
+
+        The method assigns fixed physical tags to the main room entities: air volume,
+        floor, ceiling, walls and source boundaries. These physical groups are used
+        later by the FEM simulators to identify domains and boundary conditions after
+        importing the mesh.
+
+        In patch mode, ceiling and wall patches are assigned individual physical tags.
+        Ceiling patches use tags starting at 1001 and wall patches use tags starting
+        at 2001. The mapping between patch names and physical tags is stored in
+        self.physicalTags.
+
+        Returns:
+            None
+        """
         gmsh.model.addPhysicalGroup(3, [self.volume], 1)
         gmsh.model.setPhysicalName(3, 1, "Air")
 
@@ -320,6 +428,19 @@ class Mesher:
             gmsh.model.setPhysicalName(2, 5, "Source")
         
     def generateMesh(self, dim=3):
+        """
+        Generates and writes the Gmsh mesh file.
+
+        The method sets the minimum and maximum characteristic mesh lengths using
+        self.lc, generates the mesh for the requested dimension, and saves it in the
+        room mesh output directory.
+
+        Args:
+            dim (int): Mesh dimension to generate. Defaults to 3 for a volume mesh.
+
+        Returns:
+            Path: Path to the generated .msh file.
+        """
         gmsh.option.setNumber("Mesh.CharacteristicLengthMin", self.lc)
         gmsh.option.setNumber("Mesh.CharacteristicLengthMax", self.lc)
 
@@ -332,6 +453,22 @@ class Mesher:
         return output
     
     def lineIntersection(self, p1, p2, p3, p4):
+        """
+        Computes the intersection point between two infinite 2D lines.
+
+        The first line is defined by points p1 and p2, and the second line is defined
+        by points p3 and p4. The method returns the intersection of the infinite lines,
+        not necessarily the intersection between the finite line segments.
+
+        Args:
+            p1 (tuple[float, float]): First point of the first line.
+            p2 (tuple[float, float]): Second point of the first line.
+            p3 (tuple[float, float]): First point of the second line.
+            p4 (tuple[float, float]): Second point of the second line.
+
+        Returns:
+            tuple[float, float]: Intersection point as (x, y).
+        """
         x1, y1 = p1
         x2, y2 = p2
         x3, y3 = p3
@@ -352,11 +489,34 @@ class Mesher:
         return (px, py)
         
     def ensureCounterClockwise(self):
+        """
+        Ensures that the floor polygon is ordered counterclockwise.
+
+        If the signed area of the floor polygon is negative, the vertex order is
+        reversed while keeping the first vertex fixed. The wall angle list is also
+        reversed so each angle remains associated with the corresponding wall segment.
+
+        Returns:
+            None
+        """
         if self.polygonSignedArea(self.floor_pts) < 0:
             self.floor_pts = [self.floor_pts[0]] + list(reversed(self.floor_pts[1:]))
             self.wall_angles = self.wall_angles[::-1]
             
     def polygonSignedArea(self, points):
+        """
+        Computes the signed area of a 2D polygon.
+
+        The sign of the area indicates the orientation of the polygon vertices:
+        a positive value corresponds to counterclockwise ordering, while a negative
+        value corresponds to clockwise ordering.
+
+        Args:
+            points (list[tuple[float, float]]): Polygon vertices as (x, y) points.
+
+        Returns:
+            float: Signed polygon area.
+        """
         area = 0.0
         n = len(points)
 
@@ -368,6 +528,29 @@ class Mesher:
         return area / 2.0
     
     def buildPatchedGeometry(self):
+        """
+        Builds the complete room geometry using individually tagged surface patches.
+
+        This method creates the floor, ceiling, wall patches and final air volume using
+        the Gmsh OpenCASCADE kernel. The ceiling is subdivided into square patches of
+        size self.patchSize using a flood-fill grid centered on the ceiling polygon.
+        Patches are only created when all their corners lie inside the ceiling boundary.
+
+        If the ceiling is not fully covered by square patches, the remaining ceiling
+        area is computed by subtracting the patch surfaces from the full ceiling
+        surface. Each wall is subdivided into a structured grid of patches based on
+        its average width and height.
+
+        After all boundary surfaces are created, duplicated entities are removed, a
+        closed surface loop is generated, and the room volume is created. Source
+        spheres are then subtracted from the volume so their surfaces can later be
+        tagged as source boundaries.
+
+        The generated volume tag is stored in self.volume.
+
+        Returns:
+            None
+        """
         lc = self.lc
         factory = gmsh.model.occ
 
@@ -709,6 +892,20 @@ class Mesher:
 
 
     def pointInPolygon(self, point, polygon):
+        """
+        Checks whether a 2D point lies strictly inside a polygon.
+
+        The method uses a ray-casting test to determine if the point is inside the
+        polygon. Points lying exactly on a polygon edge are treated as outside, which
+        prevents ceiling patches from being created on or beyond the room boundary.
+
+        Args:
+            point (tuple[float, float]): Point to test as (x, y).
+            polygon (list[tuple[float, float]]): Polygon vertices as (x, y) points.
+
+        Returns:
+            bool: True if the point is strictly inside the polygon, False otherwise.
+        """
         x, y = point
         inside = False
         n = len(polygon)

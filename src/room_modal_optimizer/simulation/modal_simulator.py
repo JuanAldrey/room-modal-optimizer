@@ -9,6 +9,10 @@ import numpy as np
 
 
 class ModalSimulator:
+    """
+    Unused class for transfer function analysis using modal superposition. Its use was discared after
+    poor results in testing, but it is kept here for possible future use.
+    """
     def __init__(self):
         # Mesh / geometry
         self.domain = None

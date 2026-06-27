@@ -3,6 +3,18 @@ import numpy as np
 
 
 class GeneSpaceValidator:
+    """
+    Validates whether a geometry optimization gene space is safe.
+
+    This helper class checks if the extreme combinations allowed by a GA gene
+    space can generate invalid room geometries. It verifies that source positions
+    and the audience area remain inside the room polygon with a minimum margin,
+    and that the generated polygons do not become clockwise or self-intersecting.
+
+    The validator supports both normal and symmetric optimization modes. In
+    symmetric mode, only the master-side genes are tested and the mirrored
+    geometry is reconstructed before validation.
+    """
     def validateGeneSpaceSafety(
         self,
         baseParams,
@@ -10,6 +22,30 @@ class GeneSpaceValidator:
         margin=0.05,
         keepSymmetry=False,
     ):
+        """
+        Validates the safety of a GA geometry search space.
+
+        The method checks whether the extreme combinations defined by the gene space
+        can produce invalid room geometries. It verifies source height limits, source
+        positions, audience area placement, polygon orientation and polygon
+        self-intersections.
+
+        If keepSymmetry is True, the validation is performed using symmetric geometry
+        reconstruction. Otherwise, all vertex extremes are tested directly.
+
+        Args:
+            baseParams (dict): Base room parameters containing geometry data under
+                the "data" key.
+            geneSpaceConfig (dict): Gene space configuration defining the allowed
+                vertex, wall and height variations.
+            margin (float): Minimum allowed distance between internal points or
+                polygons and the room boundary.
+            keepSymmetry (bool): If True, validates the search space assuming
+                symmetric geometry reconstruction.
+
+        Returns:
+            tuple[bool, str]: Validation result and explanatory message.
+        """
         data = baseParams["data"]
 
         baseVertices = data["vertices"]
@@ -62,6 +98,12 @@ class GeneSpaceValidator:
         geneSpaceConfig,
         margin,
     ):
+        """
+        Validates all extreme vertex combinations for a non-symmetric gene space.
+
+        Returns:
+            tuple[bool, str]: Validation result and explanatory message.
+        """
         vertexKeys = sorted(
             baseVertices.keys(),
             key=lambda key: int(key[1:]),
@@ -115,6 +157,14 @@ class GeneSpaceValidator:
         geneSpaceConfig,
         margin,
     ):
+        """
+        Validates all extreme master-side combinations for a symmetric gene space.
+
+        The mirrored vertices are reconstructed before each geometry validation.
+
+        Returns:
+            tuple[bool, str]: Validation result and explanatory message.
+        """
         ok, message = self.validateSymmetricGeneKeys(
             baseVertices=baseVertices,
             geneSpaceConfig=geneSpaceConfig,

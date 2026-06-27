@@ -3,6 +3,18 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 class Pipeline:
+    """
+    Evaluates room geometries using direct FEM simulations and the MSFD metric.
+
+    This pipeline receives a room configuration, generates its mesh, defines a grid
+    of candidate microphone positions inside the audience area, simulates the
+    frequency response from the source to all candidate receivers, and searches
+    for the microphone combination that minimizes MSFD.
+
+    The class is mainly used by geometry optimization routines, where each
+    candidate room is evaluated by its best achievable microphone configuration.
+    Failed geometries are stored in self.failedRooms.
+    """
     def __init__(self, mesher, directSimulator, evaluator):
         self.mesher = mesher
         self.directSimulator = directSimulator
@@ -13,6 +25,34 @@ class Pipeline:
         self.saveMicPlots = True
 
     def run(self, params, room_name='room', minMicDistance=0.5, nMics=4):
+        """
+        Runs the geometry evaluation pipeline for a single room configuration.
+
+        The method generates the room mesh, creates a grid of candidate microphone
+        positions inside the audience area, computes the direct FEM frequency response
+        from the source to all candidate microphones, and searches for the microphone
+        combination with the lowest MSFD value.
+
+        Microphone combinations are generated randomly while enforcing a minimum
+        distance between selected microphones. For each valid combination, the SPL
+        responses are evaluated with the MSFD metric. The best MSFD value and the
+        corresponding microphone positions are returned.
+
+        If mesh generation fails, the room parameters are stored in self.failedRooms
+        and the method returns None.
+
+        Args:
+            params (dict): Room parameters, including geometry data, source position
+                and audience area under the "data" key.
+            room_name (str): Name used to save mesh and optional plot outputs.
+            minMicDistance (float): Minimum allowed distance between microphones in
+                a selected combination, in meters.
+            nMics (int): Number of microphones to select per evaluated combination.
+
+        Returns:
+            tuple[float, np.ndarray] | None: Best MSFD value and selected microphone
+            positions with shape (nMics, 3). Returns None if mesh generation fails.
+        """
         # Generate mesh
         meshPath = self.mesher.create(params, lc=0.28, source_pos=params["data"]["source_pos"], room_name=room_name)
         if meshPath is None:
@@ -107,6 +147,30 @@ class Pipeline:
         micHeight=1.2,
         margin=0.0,
     ):
+        """
+        Generates a regular grid of candidate microphone positions.
+
+        The grid is created inside the bounding box of the audience area. A margin can
+        be applied to shrink the valid region before placing microphones. Each
+        microphone is placed at the center of a grid cell and assigned a constant
+        height.
+
+        Args:
+            audienceArea (dict | list | np.ndarray): Audience area definition used to
+                compute the valid receiver bounds.
+            micSpacing (float): Distance between adjacent microphone candidates in
+                meters.
+            micHeight (float): Microphone height in meters.
+            margin (float): Distance removed from each side of the audience bounds
+                before generating the grid.
+
+        Returns:
+            np.ndarray: Candidate microphone positions with shape (n_positions, 3).
+
+        Raises:
+            ValueError: If the audience area becomes invalid after applying the margin,
+            or if micSpacing is too large for the available area.
+        """
         xMin, xMax, yMin, yMax = self.getAudienceBounds(audienceArea)
 
         xMin += margin
@@ -145,6 +209,28 @@ class Pipeline:
         minMicDistance=0.5,
         randomSeed=1234,
     ):
+        """
+        Generates random valid microphone index combinations.
+
+        The method randomly selects groups of microphone candidates from
+        possibleMicPositions. Each combination is sorted, checked for duplicates, and
+        accepted only if all selected microphones satisfy the minimum distance
+        constraint.
+
+        Args:
+            possibleMicPositions (np.ndarray): Candidate microphone positions with
+                shape (n_positions, 3).
+            nMicsPerCombo (int): Number of microphones selected in each combination.
+            nCombos (int): Target number of valid combinations to generate.
+            minMicDistance (float): Minimum allowed distance between any pair of
+                selected microphones, in meters.
+            randomSeed (int): Seed used by the random number generator for
+                reproducible combinations.
+
+        Returns:
+            list[np.ndarray]: List of valid microphone index combinations. Each array
+            has shape (nMicsPerCombo,).
+        """
         rng = np.random.default_rng(randomSeed)
 
         combos = []
@@ -177,6 +263,21 @@ class Pipeline:
         return combos
     
     def getAudienceBounds(self, audienceArea):
+        """
+        Computes the rectangular bounds of the audience area.
+
+        The audience area vertices are sorted by their numeric key order and converted
+        to a NumPy array. The method then extracts the minimum and maximum x and y
+        coordinates, which define the bounding box used to generate candidate
+        microphone positions.
+
+        Args:
+            audienceArea (dict): Audience area vertices indexed by keys such as V1,
+                V2, V3, with each value given as an [x, y] coordinate.
+
+        Returns:
+            tuple[float, float, float, float]: Bounds as (xMin, xMax, yMin, yMax).
+        """
         keys = sorted(
             audienceArea.keys(),
             key=lambda key: int(key[1:])
@@ -195,6 +296,22 @@ class Pipeline:
         return xMin, xMax, yMin, yMax
     
     def hasMinimumDistance(self, micPositions, minDistance):
+        """
+        Checks whether all microphone pairs satisfy a minimum horizontal distance.
+
+        The method computes pairwise distances between microphone positions using
+        only the x and y coordinates. The z coordinate is ignored because the spacing
+        constraint is applied in plan view.
+
+        Args:
+            micPositions (array-like): Microphone positions with shape (n_mics, 3).
+            minDistance (float): Minimum allowed horizontal distance between any
+                pair of microphones, in meters.
+
+        Returns:
+            bool: True if all microphone pairs satisfy the distance constraint,
+            False otherwise.
+        """
         micPositions = np.asarray(micPositions, dtype=float)
 
         for i in range(len(micPositions)):
@@ -218,6 +335,31 @@ class Pipeline:
         title="Mic layout",
         outputPath=None,
     ):
+        """
+        Plots the room layout, audience area, source positions and microphone positions.
+
+        The method creates a 2D plan-view plot showing the room polygon, the audience
+        area polygon, all candidate microphone positions and the source locations. If
+        selectedMicPositions is provided, those microphones are highlighted and labeled
+        separately.
+
+        If outputPath is provided, the figure is saved to disk. Otherwise, the plot is
+        displayed interactively.
+
+        Args:
+            params (dict): Room parameters containing room vertices, audience area and
+                source positions under the "data" key.
+            possibleMicPositions (array-like): Candidate microphone positions with
+                shape (n_positions, 3).
+            selectedMicPositions (array-like | None): Selected microphone positions
+                with shape (n_selected, 3). If None, no selected microphones are shown.
+            title (str): Plot title.
+            outputPath (str | Path | None): Output image path. If None, the plot is
+                shown instead of saved.
+
+        Returns:
+            None
+        """
         roomVertices = self.sortedVertices(params["data"]["vertices"])
         audienceVertices = self.sortedVertices(params["data"]["audience_area"])
 
@@ -282,6 +424,20 @@ class Pipeline:
             plt.show()
 
     def sortedVertices(self, vertices):
+        """
+        Returns vertices sorted by their numeric key order.
+
+        The input dictionary is expected to use keys such as V1, V2 and V3. The
+        method sorts those keys numerically and returns the corresponding coordinates
+        as a NumPy array.
+
+        Args:
+            vertices (dict): Dictionary of vertices, where each key is a vertex name
+                and each value is an [x, y] coordinate.
+
+        Returns:
+            np.ndarray: Sorted vertex coordinates with shape (n_vertices, 2).
+        """
         keys = sorted(
             vertices.keys(),
             key=lambda key: int(key[1:])
