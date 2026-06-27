@@ -61,7 +61,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-from geometry import signed_area, compute_ceiling
+from room_modal_optimizer.gui.geometry import signed_area, compute_ceiling
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from matplotlib.ticker import FuncFormatter
@@ -79,10 +79,10 @@ from PySide6.QtWidgets import (
 
 # Añadimos el directorio actual al path e importamos tus funciones dummy
 sys.path.insert(0, os.path.dirname(__file__))
-import dummy_functions as dumF
+import room_modal_optimizer.gui.dummy_functions as dumF
 
 # Importamos la configuración y componentes compartidos desde GA_config
-from GA_config import GAConfigScreen, OptCanvas, _show_error
+from room_modal_optimizer.gui.GA_config import GAConfigScreen, OptCanvas, _show_error
 
 
 _MIC_COLOR_CYCLE = [

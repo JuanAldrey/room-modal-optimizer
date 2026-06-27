@@ -3,10 +3,7 @@ from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 from room_modal_optimizer.evaluation.evaluator import Evaluator
 from room_modal_optimizer.pipeline.pipeline import Pipeline
 from room_modal_optimizer.optimization.optimizer import Optimizer
-from matplotlib import pyplot as plt
 import numpy as np
-import seaborn as sns
-from pathlib import Path
 
 
 def base_room_pipeline(room_params, room_name, min_mic_distance):

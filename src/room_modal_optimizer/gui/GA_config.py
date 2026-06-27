@@ -4,7 +4,7 @@ import os
 import math
 import numpy as np
 
-from geometry import nearest_wall
+from room_modal_optimizer.gui.geometry import nearest_wall
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 

@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from geometry import (
+from room_modal_optimizer.gui.geometry import (
     build_geometry_dict, clip_polygon_halfplane, compute_ceiling,
     nearest_wall, point_side, project_point_on_line, reflect_point,
     room_volume, signed_area,

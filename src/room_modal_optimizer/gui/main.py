@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 sys.path.insert(0, os.path.dirname(__file__))
-import dummy_functions as dumF
+import room_modal_optimizer.gui.dummy_functions as dumF
 
 
 # ── Estado global ─────────────────────────────────────────────────────────────
@@ -174,11 +174,11 @@ class MainPage(QWidget):
 
     # ── Tabs ──────────────────────────────────────────────────────────────────
     def _build_room_design_tab(self) -> QWidget:
-        from room_design import RoomDesignTab
+        from room_modal_optimizer.gui.room_design import RoomDesignTab
         return RoomDesignTab(self.state)
 
     def _build_room_optimization_tab(self) -> QWidget:
-        from optim_results import RoomOptimizationTab
+        from room_modal_optimizer.gui.optim_results import RoomOptimizationTab
         self.opt_tab = RoomOptimizationTab(self.state)
 
         # Cuando termina la optimización, mostramos los resultados en la
@@ -187,7 +187,7 @@ class MainPage(QWidget):
         return self.opt_tab
 
     def _build_optimization_results_tab(self) -> QWidget:
-        from optim_results import ResultsScreen
+        from room_modal_optimizer.gui.optim_results import ResultsScreen
         self.results_tab = ResultsScreen(self.state)
 
         # Botón "← Back to GA config" dentro de la tab de resultados:
@@ -206,7 +206,7 @@ class MainPage(QWidget):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    from styles import apply_theme
+    from room_modal_optimizer.gui.styles import apply_theme
     app = QApplication(sys.argv)
     apply_theme(app)
     win = MainWindow()
