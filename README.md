@@ -475,6 +475,7 @@ gene_space_config = {
 ```
 
 For symmetric rooms, ony vertices from one side should be specified, and angles for walls crossing the axis are not allowed.
+
 ---
 
 ## Geometry Optimization Example
