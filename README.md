@@ -101,7 +101,11 @@ Contains genetic optimization routines.
 
 #### `gui`
 
-Contains graphical interface components and helper functions.
+Contains a graphical interface that can be ran using:
+
+```bash
+python -m src.room_modal_optimizer.gui.main
+```
 
 #### `tests`
 
@@ -111,32 +115,310 @@ Contains test scripts and validation utilities used during development.
 
 ## Installation
 
+This project is intended to run inside **WSL/Ubuntu** using a Conda environment.
+
+The recommended setup is:
+
+* Windows + WSL/Ubuntu
+* VS Code with the WSL extension
+* Conda environment named `room-opt-complex`
+* DOLFINx/FEniCSx installed from `conda-forge`
+* Project installed in editable mode with `pip install -e .`
+
+---
+
+### 1. Install WSL and Ubuntu
+
+Open PowerShell as administrator and run:
+
+```bash
+wsl --install -d Ubuntu
+```
+
+Restart the computer if Windows asks for it.
+
+Then open Ubuntu from the Start Menu and create the Linux username and password.
+
+---
+
+### 2. Update Ubuntu packages
+
+Inside the Ubuntu terminal, run:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+sudo apt install -y git wget curl build-essential
+```
+
+---
+
+### 3. Install Conda
+
+If Conda is not installed yet, install Miniforge inside WSL:
+
+```bash
+cd ~
+wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh
+bash Miniforge3-Linux-x86_64.sh
+```
+
+Accept the installer options.
+
+Then close and reopen the Ubuntu terminal.
+
+Check that Conda works:
+
+```bash
+conda --version
+```
+
+---
+
+### 4. Create the project environment
+
+Create the Conda environment:
+
+```bash
+conda create -n room-opt-complex -c conda-forge python=3.12
+```
+
+Activate it:
+
+```bash
+conda activate room-opt-complex
+```
+
+---
+
+### 5. Install FEM dependencies
+
+Install DOLFINx/FEniCSx with complex PETSc support:
+
+```bash
+conda install -c conda-forge fenics-dolfinx mpich "petsc=*=complex*"
+```
+
+Install additional project dependencies:
+
+```bash
+conda install -c conda-forge gmsh numpy scipy matplotlib pandas
+python -m pip install pygad
+```
+
+---
+
+### 6. Verify DOLFINx installation
+
+Run:
+
+```bash
+python -c "import dolfinx; print('dolfinx OK')"
+```
+
+Check that PETSc is using complex numbers:
+
+```bash
+python -c "from petsc4py import PETSc; import numpy as np; print(PETSc.ScalarType)"
+```
+
+The output should be similar to:
+
+```text
+<class 'numpy.complex128'>
+```
+
+If PETSc is not complex, the direct Helmholtz simulations may fail or give incorrect behavior.
+
+---
+
+### 7. Clone the repository
+
+Move to the WSL home folder:
+
+```bash
+cd ~
+```
+
 Clone the repository:
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/JuanAldrey/room-modal-optimizer
 cd room-modal-optimizer
 ```
 
-Create or activate the project environment:
+---
+
+### 8. Install the package in editable mode
+
+Make sure the environment is active:
 
 ```bash
-conda activate your-env-with-required-dependencies
+conda activate room-opt-complex
 ```
 
-Install the package in editable mode:
+From the project root folder, run:
 
 ```bash
 python -m pip install -e .
 ```
 
-Check that the package was installed correctly:
+Verify that the package imports correctly:
 
 ```bash
 python -c "import room_modal_optimizer; print('OK')"
 ```
 
-> Note: this project depends on scientific Python packages and FEM tools such as Gmsh, DOLFINx, PETSc, SLEPc and mpi4py. Their installation may depend on the operating system and environment configuration.
+If this prints `OK`, the package is installed correctly.
+
+---
+
+### 9. Open the project in VS Code
+
+Always open VS Code from the WSL terminal, inside the project folder:
+
+```bash
+cd ~/room-modal-optimizer
+conda activate room-opt-complex
+code .
+```
+
+VS Code should open connected to WSL. The bottom-left corner should indicate something like:
+
+```text
+WSL: Ubuntu
+```
+
+Do not open the project from the Windows file explorer or from a path like:
+
+```text
+C:\Users\...
+```
+
+The project should be opened from the Linux path:
+
+```text
+~/room-modal-optimizer
+```
+
+---
+
+### 10. Select the correct Python interpreter in VS Code
+
+Inside VS Code:
+
+1. Press `Ctrl + Shift + P`
+2. Search for `Python: Select Interpreter`
+3. Select the interpreter from the Conda environment:
+
+```text
+room-opt-complex
+```
+
+If VS Code does not detect the environment automatically, close VS Code and reopen it from WSL using:
+
+```bash
+cd ~/room-modal-optimizer
+conda activate room-opt-complex
+code .
+```
+
+---
+
+### 11. Test the project from VS Code
+
+Open a VS Code terminal and check that the environment is active:
+
+```bash
+conda activate room-opt-complex
+```
+
+Then run:
+
+```bash
+python -c "import room_modal_optimizer; print('OK')"
+python -c "import dolfinx; print('dolfinx OK')"
+python -c "import gmsh; print('gmsh OK')"
+python -c "import pygad; print('pygad OK')"
+```
+
+If all commands print `OK`, the installation is ready.
+
+---
+
+## Common Issues
+
+### VS Code does not recognize `room_modal_optimizer`
+
+Make sure the project was installed in editable mode:
+
+```bash
+cd ~/room-modal-optimizer
+conda activate room-opt-complex
+python -m pip install -e .
+```
+
+Then select the correct interpreter in VS Code:
+
+```text
+Python: Select Interpreter → room-opt-complex
+```
+
+---
+
+### The terminal imports the package, but VS Code shows import errors
+
+This usually means VS Code is using the wrong Python interpreter.
+
+Fix it by opening VS Code from WSL:
+
+```bash
+cd ~/room-modal-optimizer
+conda activate room-opt-complex
+code .
+```
+
+Then select the `room-opt-complex` interpreter.
+
+---
+
+### DOLFINx works, but direct simulations fail
+
+Check that PETSc was installed with complex scalar support:
+
+```bash
+python -c "from petsc4py import PETSc; print(PETSc.ScalarType)"
+```
+
+The output should be:
+
+```text
+<class 'numpy.complex128'>
+```
+
+If it is not complex, recreate the environment and reinstall DOLFINx with:
+
+```bash
+conda install -c conda-forge fenics-dolfinx mpich "petsc=*=complex*"
+```
+
+---
+
+### MPI issues
+
+Check that `mpirun` comes from the Conda environment:
+
+```bash
+which mpirun
+```
+
+It should point to a path inside the Conda environment, not to the system installation.
+
+For example:
+
+```text
+.../envs/room-opt-complex/bin/mpirun
+```
 
 ---
 
