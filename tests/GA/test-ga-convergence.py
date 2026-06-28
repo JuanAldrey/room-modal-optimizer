@@ -11,6 +11,13 @@ import json
 import time
 import traceback
 
+"""
+
+Script used to carry out a brute force resolution of the gene space present in optimization_symetric.py.
+Results between both methods were compared in order
+
+"""
+
 
 # =========================================================
 # Configuración del experimento

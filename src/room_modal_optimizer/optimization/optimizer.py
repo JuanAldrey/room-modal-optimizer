@@ -34,6 +34,8 @@ class Optimizer:
         sol_per_pop=12,
         n_generations=50,
         minMicDistance=0.25,
+        nMics=4,
+        fmax=200,
         keepSymmetry=False,
         runName=None,
         savePlots=True,
@@ -49,6 +51,8 @@ class Optimizer:
         self.sol_per_pop = sol_per_pop
         self.n_generations = n_generations
         self.minMicDistance = minMicDistance
+        self.nMics = nMics
+        self.fmax = fmax
         self.savePlots = savePlots
         self.random_seed=random_seed
 
@@ -459,7 +463,9 @@ class Optimizer:
         idx, bestMicPositions = pipeline.run(
             params,
             room_name=room_name,
-            minMicDistance=self.minMicDistance
+            minMicDistance=self.minMicDistance,
+            nMics=self.nMics,
+            fmax=200
         )
         
         if idx is None:

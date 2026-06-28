@@ -1,0 +1,2 @@
+The code present in "modal_superposition_accuracy" contains many scripts used to test which method developed on the project
+better aproximates the validated method, direct order 2, while maintaining a reasonable computational cost.

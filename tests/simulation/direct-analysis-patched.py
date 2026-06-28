@@ -44,7 +44,7 @@ def createPatchImpedanceByTag(physicalTags, patchImpedance=25.0):
 
 patchImpedanceByTag = createPatchImpedanceByTag(
     phyisical_tags,
-    patchImpedance=25.0
+    patchImpedance=0
 )
 
 directSimulator = DirectSimulator()

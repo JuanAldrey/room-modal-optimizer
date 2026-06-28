@@ -27,4 +27,4 @@ params_8_walls_no_angles = {
 }
 
 mesher = Mesher()
-mesher.create(params_8_walls_no_angles, room_name="rectangular", visualize=True, source_pos=(2, 1.5, 1.5))
+mesher.create(params_8_walls_no_angles, room_name="rectangular", visualize=True, source_pos=[(2, 1.5, 1.5)])

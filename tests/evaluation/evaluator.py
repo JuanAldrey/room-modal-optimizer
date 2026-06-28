@@ -1,9 +1,10 @@
 from room_modal_optimizer.meshing.mesher import Mesher
-from room_modal_optimizer.simulation.modal_simulator import ModalSimulator
+from room_modal_optimizer.simulation.direct_simulator import DirectSimulator
 from room_modal_optimizer.evaluation.evaluator import Evaluator
 
-room_name = 'testing_non_rectangular_6_4_3_4'
-params = {
+room_name = "testing_direct"
+
+params_8_walls_angled = {
     "data": {
         "vertices": {
             "V1": [0.0, 0.0],
@@ -16,14 +17,14 @@ params = {
             "V8": [-0.4, 1.4]
         },
         "walls": {
-            "W1": 0.0,
+            "W1": 3.0,
             "W2": 0.0,
-            "W3": 0.0,
-            "W4": 0.0,
+            "W3": 0.3,
+            "W4": 5.0,
             "W5": 0.0,
-            "W6": 0.0,
-            "W7": 0.0,
-            "W8": 0.0
+            "W6": 5.0,
+            "W7": -3.0,
+            "W8": -3.0
         },
         "Z": 3.0
     }
@@ -35,13 +36,32 @@ params = {
 # lc = 1.715 / 6 = 0.286 m
 # Chosen: lc = 0.25 m
 mesher = Mesher()
-mesh_path = mesher.create(params, lc=0.25, room_name=room_name, visualize=False)
+mesh_path = mesher.create(params_8_walls_angled, room_name=room_name, visualize=False, source_pos=[(2.5, 2.5, 1.5)])
 
-modalSimulator = ModalSimulator()
-eig_freq, eig_vector, n_modes = modalSimulator.simulate(mesh_path, room_name=room_name, export=False)
+directSimulator = DirectSimulator()
+mic_positions = [
+    (1, 1, 1.5),
+    (2, 1, 1.5),
+    (3, 1, 1.5),
+    (2, 2, 1.5),
+    (2, 1, 2.5),
+    (1, 3, 1.5),
+    (1.5, 1.3, 1.5),
+    (2.2, 1.7, 1.5),
+]
+
+freqs, spl_responses = directSimulator.simulate(
+    mesh_path,
+    mic_positions=mic_positions,
+    room_name=room_name,
+)
 
 evaluator = Evaluator()
-frq_sp_idx = evaluator.evaluate(eig_freq, n_modes)
+msfd = evaluator.evaluate_msfd(
+                response=spl_responses,
+                input_is_db=True,
+                weight_magnitude=0.5,
+                weight_spatial=0.5,
+            )["MSFD"]
 
-print(eig_freq)
-print("Index: ", frq_sp_idx)
+print("MSFD: ", msfd)

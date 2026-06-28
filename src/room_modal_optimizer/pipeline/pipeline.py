@@ -24,7 +24,7 @@ class Pipeline:
         self.savePlantPlot = False
         self.saveMicPlots = False
 
-    def run(self, params, room_name='room', minMicDistance=0.5, nMics=4):
+    def run(self, params, room_name='room', minMicDistance=0.5, nMics=4, fmax=200):
         """
         Runs the geometry evaluation pipeline for a single room configuration.
 
@@ -88,7 +88,7 @@ class Pipeline:
             mic_positions=possibleMicPositions,
             order=1,
             room_name=room_name,
-            freqs=np.arange(20.0, 201.0, 2.0),
+            freqs=np.arange(20.0, fmax, 2.0),
             use_impedance=True,
             wall_z=25.0 + 0j,
             floor_z=25.0 + 0j,

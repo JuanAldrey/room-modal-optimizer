@@ -50,24 +50,14 @@ bestMsfd, bestMicPositions = pipeline.run(
     room_name=room_name,
     minMicDistance=minMicDistance,
     nMics=4,
+    fmax=200
 )
 
 print("Best MSFD (order 1):", bestMsfd)
 print("Best mic positions:")
 print(bestMicPositions)
 
-print()
-print("Expected GA MSFD:", 2.4837635437946934)
-print("Expected GA mic positions:")
-print(np.array([
-    [ 0.75, 1.05, 1.2],
-    [-0.85, 1.15, 1.2],
-    [-0.25, 1.15, 1.2],
-    [ 0.25, 1.15, 1.2],
-]))
-
-
-order_2 = True
+order_2 = False
 
 if order_2:
 
