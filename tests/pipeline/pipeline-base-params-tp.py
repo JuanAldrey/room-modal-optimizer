@@ -6,15 +6,15 @@ from room_modal_optimizer.evaluation.evaluator import Evaluator
 import numpy as np
 
 
-room_name = "verify_ga_best_pipeline"
+room_name = "verify_bruteforce_best_pipeline"
 
 params = {
     "data": {
         "vertices": {
-            "V1": [-2.9086627578310877, 0.47831999461950336],
-            "V2": [ 2.9086627578310877, 0.47831999461950336],
-            "V3": [ 2.0944326910433904, 4.2909794684711695],
-            "V4": [-2.0944326910433904, 4.2909794684711695],
+            "V1": [-2.75, 0.25],
+            "V2": [ 2.75, 0.25],
+            "V3": [ 2.25, 3.75],
+            "V4": [-2.25, 3.75],
         },
         "walls": {
             "W1": 0.0,
@@ -28,7 +28,7 @@ params = {
             "V3": [ 1.0, 2.5],
             "V4": [-1.0, 2.5],
         },
-        "Z": 3.534910033007663,
+        "Z": 3.6,
         "source_pos": [[0.0, 3.0, 1.5]],
     }
 }
@@ -52,13 +52,13 @@ bestMsfd, bestMicPositions = pipeline.run(
     nMics=4,
 )
 
-print("Best MSFD (order 1):", bestMsfd)
+print("Best MSFD brute force params (order 1):", bestMsfd)
 print("Best mic positions:")
 print(bestMicPositions)
 
 print()
-print("Expected GA MSFD:", 2.4837635437946934)
-print("Expected GA mic positions:")
+print("Expected brute force MSFD:", 2.6249825991992437)
+print("Expected brute force mic positions:")
 print(np.array([
     [ 0.75, 1.05, 1.2],
     [-0.85, 1.15, 1.2],
@@ -71,7 +71,7 @@ order_2 = True
 
 if order_2:
 
-    room_name_order_2 = "verify_ga_best_order2"
+    room_name_order_2 = "verify_bruteforce_best_order2"
 
     meshPath = mesher.create(
         params,
@@ -99,4 +99,4 @@ if order_2:
         weight_spatial=0.5,
     )["MSFD"]
 
-    print("Best MSFD (order 2):", msfdOrder2)
+    print("Best MSFD brute force params (order 2):", msfdOrder2)

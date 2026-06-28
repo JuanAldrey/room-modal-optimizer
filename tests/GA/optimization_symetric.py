@@ -12,7 +12,7 @@ gene_space_config = {
         "V3": {"dx": [-0.50, 0.50], "dy": [-0.50, 0.50]},
     },
     "walls": {
-        "W2": {"low": -5.0, "high": 5.0},
+
     },
     "Z": {"low": 3.0, "high": 4.2},
 }
@@ -51,7 +51,7 @@ base_params = {
 }
 
 # Run GA to find optimized room
-optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.5, keepSymmetry=True)
+optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.5, keepSymmetry=True, random_seed=43)
 bestResults = optimizer.run()
 
 bestResult = bestResults[0]

@@ -21,8 +21,8 @@ class Pipeline:
         self.evaluator = evaluator
         self.failedRooms = []
 
-        self.savePlantPlot = True
-        self.saveMicPlots = True
+        self.savePlantPlot = False
+        self.saveMicPlots = False
 
     def run(self, params, room_name='room', minMicDistance=0.5, nMics=4):
         """

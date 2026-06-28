@@ -25,7 +25,7 @@ mic_positions = [
     [4.7, 0.9, 1.2],
 ]
 
-absorptionOptimizer = AbsorptionOptimizer(percentage=0.2, params=params, mic_positions=mic_positions)
+absorptionOptimizer = AbsorptionOptimizer(percentage=0.4, params=params, mic_positions=mic_positions)
 best_results = absorptionOptimizer.run()
 
 print(best_results)
