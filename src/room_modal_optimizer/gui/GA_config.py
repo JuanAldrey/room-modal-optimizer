@@ -327,6 +327,11 @@ def _make_table(headers):
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels(headers)
     t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    # Edición deshabilitada a propósito: el editor in-place de QTableWidget
+    # (delegado nativo de Qt) puede generar crashes al combinarse con el
+    # canvas de matplotlib embebido en la misma ventana. En su lugar, doble
+    # click en una fila abre el diálogo de rango correspondiente (mismo
+    # mecanismo, ya probado, que se usa al hacer click sobre el canvas).
     t.setEditTriggers(QAbstractItemView.NoEditTriggers)
     t.setSelectionBehavior(QTableWidget.SelectRows)
     t.setMaximumHeight(160)
@@ -431,7 +436,7 @@ class GAConfigScreen(QWidget):
         dir_row.addWidget(self.dir_lbl, stretch=1)
         btn_dir = QPushButton("Browse")
         btn_dir.setProperty("role", "secondary")
-        btn_dir.setFixedWidth(70)
+        btn_dir.setFixedWidth(110)
         btn_dir.clicked.connect(self._choose_output_dir)
         dir_row.addWidget(btn_dir)
         dir_lay.addLayout(dir_row)
@@ -468,13 +473,26 @@ class GAConfigScreen(QWidget):
         mmd_lay.addWidget(QLabel("Min dist [m]:"))
         self.min_mic_distance_edit = QLineEdit("0.5")
         self.min_mic_distance_edit.setValidator(QDoubleValidator(0.01, 60.0, 3, self))
+        self.min_mic_distance_edit.textChanged.connect(self._sync_to_state)
         mmd_lay.addWidget(self.min_mic_distance_edit)
         lay.addWidget(mmd_box)
+
+        # Number of mics
+        nmics_box = QGroupBox(" Number of Mics")
+        nmics_lay = QHBoxLayout(nmics_box)
+        nmics_lay.addWidget(QLabel("N° mics:"))
+        self.n_mics_edit = QLineEdit("4")
+        self.n_mics_edit.setValidator(QIntValidator(1, 100, self))
+        self.n_mics_edit.textChanged.connect(self._sync_to_state)
+        nmics_lay.addWidget(self.n_mics_edit)
+        lay.addWidget(nmics_box)
 
         # Vertices table
         vbox = QGroupBox(" Vertices")
         vlay = QVBoxLayout(vbox)
         self.vtable = _make_table(["✓", "Param", "X min", "X max", "Y min", "Y max"])
+        self.vtable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("vertex", row))
         vlay.addWidget(self.vtable)
         lay.addWidget(vbox)
 
@@ -482,6 +500,8 @@ class GAConfigScreen(QWidget):
         wbox = QGroupBox(" Wall Tilt")
         wlay = QVBoxLayout(wbox)
         self.wtable = _make_table(["✓", "Param", "Tilt min", "Tilt max", "", ""])
+        self.wtable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("wall", row))
         wlay.addWidget(self.wtable)
         lay.addWidget(wbox)
 
@@ -489,6 +509,8 @@ class GAConfigScreen(QWidget):
         hbox = QGroupBox(" Height")
         hlay = QVBoxLayout(hbox)
         self.htable = _make_table(["✓", "Param", "Min", "Max", "", ""])
+        self.htable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("height", row))
         hlay.addWidget(self.htable)
         lay.addWidget(hbox)
 
@@ -563,6 +585,7 @@ class GAConfigScreen(QWidget):
         cfg["height_ranges"] = hr
         cfg["output_dir"]    = self.output_dir
         cfg["min_mic_distance"] = float(self.min_mic_distance_edit.text() or 0.5)
+        cfg["n_mics"]        = int(self.n_mics_edit.text() or 4)
         cfg["run_name"]      = self.run_name_edit.text()
         cfg["n_generations"] = int(self.n_generations_edit.text() or 100)
         cfg["sol_per_pops"]  = int(self.sol_per_pops_edit.text() or 20)
@@ -622,6 +645,7 @@ class GAConfigScreen(QWidget):
             self.dir_lbl.setText(self.output_dir)
             self.dir_lbl.setStyleSheet("color: #aaaaaa; font-size: 8pt;")
         self.min_mic_distance_edit.setText(str(cfg.get("min_mic_distance", 0.5)))
+        self.n_mics_edit.setText(str(cfg.get("n_mics", 4)))
         self.run_name_edit.setText(cfg.get("run_name", ""))
         self.n_generations_edit.setText(str(cfg.get("n_generations", 100)))
         self.sol_per_pops_edit.setText(str(cfg.get("sol_per_pops", 20)))
@@ -683,21 +707,29 @@ class GAConfigScreen(QWidget):
         self._sync_to_state()
 
     def _rebuild_tables(self, verts, walls, height):
-        self.vtable.setRowCount(0)
-        self.wtable.setRowCount(0)
-        self.htable.setRowCount(0)
-        self.vertex_cbs.clear()
-        self.wall_cbs.clear()
-        for i, r in enumerate(self.vertex_ranges):
-            locked = r.get("locked", False)
-            self.vertex_cbs.append(
-                _add_row(self.vtable, r["vertex"], r["xmin"], r["xmax"], r["ymin"], r["ymax"],
-                         enabled=r.get("enabled", True), locked=locked))
-        for i, r in enumerate(self.wall_ranges):
-            self.wall_cbs.append(
-                _add_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"]))
-        hr = self.height_ranges
-        self.height_cb = _add_row(self.htable, "Height", hr["zmin"], hr["zmax"])
+        self.vtable.blockSignals(True)
+        self.wtable.blockSignals(True)
+        self.htable.blockSignals(True)
+        try:
+            self.vtable.setRowCount(0)
+            self.wtable.setRowCount(0)
+            self.htable.setRowCount(0)
+            self.vertex_cbs.clear()
+            self.wall_cbs.clear()
+            for i, r in enumerate(self.vertex_ranges):
+                locked = r.get("locked", False)
+                self.vertex_cbs.append(
+                    _add_row(self.vtable, r["vertex"], r["xmin"], r["xmax"], r["ymin"], r["ymax"],
+                             enabled=r.get("enabled", True), locked=locked))
+            for i, r in enumerate(self.wall_ranges):
+                self.wall_cbs.append(
+                    _add_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"]))
+            hr = self.height_ranges
+            self.height_cb = _add_row(self.htable, "Height", hr["zmin"], hr["zmax"])
+        finally:
+            self.vtable.blockSignals(False)
+            self.wtable.blockSignals(False)
+            self.htable.blockSignals(False)
 
     def _clear_ranges(self):
         n_v = len(self.vertex_ranges)
@@ -744,3 +776,19 @@ class GAConfigScreen(QWidget):
 
     def _run_ga(self):
         self.runRequested.emit()
+
+    # ── Table double-click → range dialog ────────────────────────────────────
+    def _on_table_row_double_clicked(self, kind, row):
+        """Doble click en una fila de vtable/wtable/htable: abre el mismo
+        diálogo de rango que se usa al hacer click sobre el canvas. Reutiliza
+        _on_item_selected para height usamos su propio diálogo simple."""
+        if kind in ("vertex", "wall"):
+            self._on_item_selected(kind, row)
+        elif kind == "height":
+            self.info_lbl.setText("Height selected")
+            dlg = HeightRangeDialog(self.height_ranges, self)
+            if dlg.exec() == QDialog.Accepted:
+                self.height_ranges.update(dlg.get_ranges())
+                hr = self.height_ranges
+                _update_row(self.htable, 0, hr["zmin"], hr["zmax"])
+                self._sync_to_state()
