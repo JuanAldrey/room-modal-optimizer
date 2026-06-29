@@ -40,8 +40,13 @@ def base_room_pipeline(room_params, room_name, min_mic_distance, n_mics):
     print(bestMicPositions)
 
     bestMsfd= sim_order_2(room_params, bestMicPositions, "Base Room")
+    
+    mics_pos = []
 
-    return bestMsfd, bestMicPositions
+    for i in bestMicPositions:
+        mics_pos.append(list(i))
+
+    return bestMsfd, mics_pos
 
 def sim_order_2(room_params, micPositions, room_name):
     
@@ -172,28 +177,24 @@ def run_ga_optimization(room_params, ga_config, minMicDistance):
 
     # primero ejecuto pipeline de recinto base
 
-    #base_bestMsfd, bestMicPositions = base_room_pipeline(room_params, "Base Room", minMicDistance, n_mics=ga_config["n_mics"])
+    base_bestMsfd, bestMicPositions = base_room_pipeline(room_params, "Base Room", minMicDistance, n_mics=ga_config["n_mics"])
 
-    #base_room_dict = {"room_name": "Base Room", "best_mic_positions":bestMicPositions, "params":room_params, "best_msfd":base_bestMsfd}
+    base_room_dict = {"room_name": "Base Room", "best_mic_positions":bestMicPositions, "params":room_params, "best_msfd":base_bestMsfd}
 
-    #print(base_room_dict)
-
-    #cleaned_output.append(base_room_dict)
+    cleaned_output.append(base_room_dict)
 
     optim_out= optimize(room_params, ga_config, minMicDistance)
-#
-    print(optim_out)
-#
-#
+
     for r in optim_out:
         room_out = {k: r[k] for k in keys_to_extract if k in r}
         best_msdf = 1/r["fitness"] - 1
         room_out["best_msfd"] = best_msdf
         cleaned_output.append(room_out)
-#
+
     ##cleaned_output structure: List of best rooms. Each room is a dict.
     ## keys: "room_name", "best_mic_positions", "params", "best_msfd"
-#
+
+    print(cleaned_output)
     return cleaned_output
 
 def sim_response(params, room_name, micPositions):
