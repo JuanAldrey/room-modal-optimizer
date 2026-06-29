@@ -51,7 +51,7 @@ base_params = {
 }
 
 # Run GA to find optimized room
-optimizer = Optimizer(base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.5, keepSymmetry=True, random_seed=43)
+optimizer = Optimizer(runName='test-simmetric', base_params=base_params, gene_space_config=gene_space_config, minMicDistance=0.5, keepSymmetry=True, random_seed=43)
 bestResults = optimizer.run()
 
 bestResult = bestResults[0]

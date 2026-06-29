@@ -475,7 +475,7 @@ class Optimizer:
             fitness = 1.0 / (1.0 + abs(idx))
             print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
-        with open(self.solutionsDir / f"{room_name}.json", "w", encoding="utf-8") as f:
+        with open(self.solutionsDir / f"{self.runName}_{room_name}.json", "w", encoding="utf-8") as f:
             json.dump({
                 "room_name": room_name,
                 "generation": int(generation),

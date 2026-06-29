@@ -1,17 +1,18 @@
 from room_modal_optimizer.meshing.mesher import Mesher
 
-params_8_walls_no_angles = {
+room_name = "nice_mesh_room"
+
+params = {
     "data": {
         "vertices": {
-            "V1": [0.0, 0.0],
-            "V2": [2.0, -0.2],
-            "V3": [4.0, 0.3],
-            "V4": [4.7, 1.6],
-            "V5": [4.0, 3.0],
-            "V6": [2.4, 3.5],
-            "V7": [0.7, 3.0],
-            "V8": [-0.4, 1.4]
+            "V1": [-3.00, 0.00],
+            "V2": [ 3.00, 0.00],
+            "V3": [ 3.40, 2.20],
+            "V4": [ 2.10, 5.20],
+            "V5": [-2.10, 5.20],
+            "V6": [-3.40, 2.20],
         },
+
         "walls": {
             "W1": 0.0,
             "W2": 0.0,
@@ -19,12 +20,20 @@ params_8_walls_no_angles = {
             "W4": 0.0,
             "W5": 0.0,
             "W6": 0.0,
-            "W7": 0.0,
-            "W8": 0.0
         },
-        "Z": 3.0
+
+        "audience_area": {
+            "V1": [-1.60, 2.00],
+            "V2": [ 1.60, 2.00],
+            "V3": [ 1.30, 4.20],
+            "V4": [-1.30, 4.20],
+        },
+
+        "Z": 3.40,
+
+        "source_pos": [[0.00, 1.00, 1.20]],
     }
 }
 
 mesher = Mesher()
-mesher.create(params_8_walls_no_angles, room_name="rectangular", visualize=True, source_pos=[(2, 1.5, 1.5)])
+mesher.create(params, room_name="rectangular", visualize=True, source_pos=[(2, 1.5, 1.5)])
