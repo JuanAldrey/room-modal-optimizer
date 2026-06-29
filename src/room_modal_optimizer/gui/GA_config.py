@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from room_modal_optimizer.gui.geometry import nearest_wall
+import room_modal_optimizer.gui.dummy_functions as dumF
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -451,9 +452,10 @@ class GAConfigScreen(QWidget):
 
         lay.addWidget(dir_box)
 
-        # GA run parameters
+        # GA run parameters (todos los inputs de configuración, salvo Output Directory)
         ga_params_box = QGroupBox(" GA Parameters")
         ga_params_lay = QGridLayout(ga_params_box)
+
         ga_params_lay.addWidget(QLabel("Number of generations:"), 0, 0)
         self.n_generations_edit = QLineEdit("100")
         self.n_generations_edit.setValidator(QIntValidator(1, 100000, self))
@@ -465,27 +467,29 @@ class GAConfigScreen(QWidget):
         self.sol_per_pops_edit.setValidator(QIntValidator(1, 100000, self))
         self.sol_per_pops_edit.textChanged.connect(self._sync_to_state)
         ga_params_lay.addWidget(self.sol_per_pops_edit, 1, 1)
-        lay.addWidget(ga_params_box)
 
-        # Minimum distance between mics
-        mmd_box = QGroupBox(" Minimum Mic Distance")
-        mmd_lay = QHBoxLayout(mmd_box)
-        mmd_lay.addWidget(QLabel("Min dist [m]:"))
+        ga_params_lay.addWidget(QLabel("Max freq [Hz]:"), 2, 0)
+        self.f_max_edit = QLineEdit("200")
+        self.f_max_edit.setValidator(QDoubleValidator(1.0, 20000.0, 2, self))
+        self.f_max_edit.textChanged.connect(self._sync_to_state)
+        ga_params_lay.addWidget(self.f_max_edit, 2, 1)
+        self.sch_lbl = QLabel("Schroeder f: — Hz")
+        self.sch_lbl.setStyleSheet("color: #888888; font-size: 9pt;")
+        ga_params_lay.addWidget(self.sch_lbl, 2, 2)
+
+        ga_params_lay.addWidget(QLabel("Min mic dist [m]:"), 3, 0)
         self.min_mic_distance_edit = QLineEdit("0.5")
         self.min_mic_distance_edit.setValidator(QDoubleValidator(0.01, 60.0, 3, self))
         self.min_mic_distance_edit.textChanged.connect(self._sync_to_state)
-        mmd_lay.addWidget(self.min_mic_distance_edit)
-        lay.addWidget(mmd_box)
+        ga_params_lay.addWidget(self.min_mic_distance_edit, 3, 1)
 
-        # Number of mics
-        nmics_box = QGroupBox(" Number of Mics")
-        nmics_lay = QHBoxLayout(nmics_box)
-        nmics_lay.addWidget(QLabel("N° mics:"))
+        ga_params_lay.addWidget(QLabel("N° mics:"), 4, 0)
         self.n_mics_edit = QLineEdit("4")
         self.n_mics_edit.setValidator(QIntValidator(1, 100, self))
         self.n_mics_edit.textChanged.connect(self._sync_to_state)
-        nmics_lay.addWidget(self.n_mics_edit)
-        lay.addWidget(nmics_box)
+        ga_params_lay.addWidget(self.n_mics_edit, 4, 1)
+
+        lay.addWidget(ga_params_box)
 
         # Vertices table
         vbox = QGroupBox(" Vertices")
@@ -509,6 +513,7 @@ class GAConfigScreen(QWidget):
         hbox = QGroupBox(" Height")
         hlay = QVBoxLayout(hbox)
         self.htable = _make_table(["✓", "Param", "Min", "Max", "", ""])
+        self.htable.setMaximumHeight(70)
         self.htable.cellDoubleClicked.connect(
             lambda row, col: self._on_table_row_double_clicked("height", row))
         hlay.addWidget(self.htable)
@@ -522,8 +527,7 @@ class GAConfigScreen(QWidget):
         grid.setSpacing(6)
         grid.setContentsMargins(0, 6, 0, 6)
         for text, role, cb, r, c, cs in [
-            ("Load from Design", "secondary", self._load_from_design, 0, 0, 1),
-            ("Load Room File",   "secondary", self._load_room_file,   0, 1, 1),
+            ("Load Room File",   "secondary", self._load_room_file,   0, 0, 2),
             ("Clear Ranges",     "danger",    self._clear_ranges,     1, 0, 1),
             ("Optimize",         "success",   self._run_ga,           1, 1, 1),
         ]:
@@ -536,6 +540,24 @@ class GAConfigScreen(QWidget):
         grid.setColumnStretch(1, 1)
         lay.addWidget(btn_frame)
         return panel
+
+    # ── Schroeder frequency ──────────────────────────────────────────────────
+    def _update_schroeder_label(self):
+        """Recalcula y muestra la frecuencia de Schroeder del recinto base
+        (geometría actualmente cargada en self.state.room_geometry), usando
+        dumF.get_sch(room_params). Se le pasa la data completa extraída del
+        JSON (self.state.room_geometry, con su clave "data"), no solo el
+        contenido interno de geometría."""
+        room_data = self.state.room_geometry
+        geom = room_data.get("data", {}) if room_data else {}
+        if not geom:
+            self.sch_lbl.setText("Schroeder f: — Hz")
+            return
+        try:
+            sch = dumF.get_sch(room_data)
+            self.sch_lbl.setText(f"Schroeder f: {sch:.1f} Hz")
+        except Exception:
+            self.sch_lbl.setText("Schroeder f: — Hz")
 
     # ── Overlay ───────────────────────────────────────────────────────────────
     def resizeEvent(self, event):
@@ -589,13 +611,19 @@ class GAConfigScreen(QWidget):
         cfg["run_name"]      = self.run_name_edit.text()
         cfg["n_generations"] = int(self.n_generations_edit.text() or 100)
         cfg["sol_per_pops"]  = int(self.sol_per_pops_edit.text() or 20)
+        cfg["f_max"]         = float(self.f_max_edit.text() or 200.0)
 
     def _sync_from_state(self):
         """Lee state.ga_config y reconstruye las tablas si hay geometría disponible."""
         cfg  = self.state.ga_config
-        geom = self.state.room_geometry.get("data", {})
+        room = self.state.room_geometry
+        geom = room.get("data", {})
         if not geom.get("vertices"):
             return
+
+        # Sync symmetry flag from JSON in case it wasn't set yet (e.g. on startup)
+        if "is_symmetric" in room:
+            self.state.is_symmetric = room["is_symmetric"]
 
         verts  = [(v[0], v[1]) for v in geom["vertices"].values()]
         walls  = [{"id": f"W{i+1}", "tilt_deg": geom.get("walls", {}).get(f"W{i+1}", 0.0)}
@@ -608,7 +636,7 @@ class GAConfigScreen(QWidget):
         saved_wr = cfg.get("wall_ranges",   [])
         saved_hr = cfg.get("height_ranges", {})
 
-        sym = self.state.symmetric
+        sym = self.state.is_symmetric
 
         # Usar rangos guardados si coincide la cantidad de vértices/paredes;
         # si no, inicializar en cero.
@@ -649,6 +677,7 @@ class GAConfigScreen(QWidget):
         self.run_name_edit.setText(cfg.get("run_name", ""))
         self.n_generations_edit.setText(str(cfg.get("n_generations", 100)))
         self.sol_per_pops_edit.setText(str(cfg.get("sol_per_pops", 20)))
+        self.f_max_edit.setText(str(cfg.get("f_max", 200)))
 
         self.canvas.load(verts, walls, sym, locked_set,
                           audience_verts, audience_locked_set, source_positions)
@@ -664,6 +693,8 @@ class GAConfigScreen(QWidget):
         if self.height_cb:
             self.height_cb.setChecked(self.height_ranges.get("enabled", True))
 
+        self._update_schroeder_label()
+
     # ── Data loading ──────────────────────────────────────────────────────────
     def _load_room_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load Room", "", "JSON Files (*.json)")
@@ -673,6 +704,8 @@ class GAConfigScreen(QWidget):
             with open(path) as f:
                 raw = json.load(f)
             self.state.room_geometry = raw if "data" in raw else {"data": raw}
+            # Sync symmetry flag from the loaded JSON before building tables/canvas
+            self.state.is_symmetric = self.state.room_geometry.get("is_symmetric", False)
             self._load_from_design()
         except Exception as e:
             _show_error(self, f"Could not load file:\n{e}")
@@ -687,7 +720,7 @@ class GAConfigScreen(QWidget):
                   for i in range(len(verts))]
         height = geom.get("Z", 3.0)
         audience_verts, source_positions = _extract_audience_and_source(geom)
-        sym = self.state.symmetric
+        sym = self.state.is_symmetric
 
         locked_set = {i for i, v in enumerate(verts) if sym and v[0] < 0}
         self.vertex_ranges = [{"vertex": f"V{i+1}", "xmin": 0., "xmax": 0., "ymin": 0., "ymax": 0.,
@@ -705,6 +738,7 @@ class GAConfigScreen(QWidget):
                           audience_verts, audience_locked_set, source_positions)
         self._rebuild_tables(verts, walls, height)
         self._sync_to_state()
+        self._update_schroeder_label()
 
     def _rebuild_tables(self, verts, walls, height):
         self.vtable.blockSignals(True)
