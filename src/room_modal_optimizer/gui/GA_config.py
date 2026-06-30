@@ -5,6 +5,7 @@ import math
 import numpy as np
 
 from room_modal_optimizer.gui.geometry import nearest_wall
+import room_modal_optimizer.gui.dummy_functions as dumF
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
@@ -327,6 +328,11 @@ def _make_table(headers):
     t = QTableWidget(0, len(headers))
     t.setHorizontalHeaderLabels(headers)
     t.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+    # Edición deshabilitada a propósito: el editor in-place de QTableWidget
+    # (delegado nativo de Qt) puede generar crashes al combinarse con el
+    # canvas de matplotlib embebido en la misma ventana. En su lugar, doble
+    # click en una fila abre el diálogo de rango correspondiente (mismo
+    # mecanismo, ya probado, que se usa al hacer click sobre el canvas).
     t.setEditTriggers(QAbstractItemView.NoEditTriggers)
     t.setSelectionBehavior(QTableWidget.SelectRows)
     t.setMaximumHeight(160)
@@ -431,7 +437,7 @@ class GAConfigScreen(QWidget):
         dir_row.addWidget(self.dir_lbl, stretch=1)
         btn_dir = QPushButton("Browse")
         btn_dir.setProperty("role", "secondary")
-        btn_dir.setFixedWidth(70)
+        btn_dir.setFixedWidth(110)
         btn_dir.clicked.connect(self._choose_output_dir)
         dir_row.addWidget(btn_dir)
         dir_lay.addLayout(dir_row)
@@ -446,9 +452,10 @@ class GAConfigScreen(QWidget):
 
         lay.addWidget(dir_box)
 
-        # GA run parameters
+        # GA run parameters (todos los inputs de configuración, salvo Output Directory)
         ga_params_box = QGroupBox(" GA Parameters")
         ga_params_lay = QGridLayout(ga_params_box)
+
         ga_params_lay.addWidget(QLabel("Number of generations:"), 0, 0)
         self.n_generations_edit = QLineEdit("100")
         self.n_generations_edit.setValidator(QIntValidator(1, 100000, self))
@@ -460,21 +467,36 @@ class GAConfigScreen(QWidget):
         self.sol_per_pops_edit.setValidator(QIntValidator(1, 100000, self))
         self.sol_per_pops_edit.textChanged.connect(self._sync_to_state)
         ga_params_lay.addWidget(self.sol_per_pops_edit, 1, 1)
-        lay.addWidget(ga_params_box)
 
-        # Minimum distance between mics
-        mmd_box = QGroupBox(" Minimum Mic Distance")
-        mmd_lay = QHBoxLayout(mmd_box)
-        mmd_lay.addWidget(QLabel("Min dist [m]:"))
+        ga_params_lay.addWidget(QLabel("Max freq [Hz]:"), 2, 0)
+        self.f_max_edit = QLineEdit("200")
+        self.f_max_edit.setValidator(QDoubleValidator(1.0, 20000.0, 2, self))
+        self.f_max_edit.textChanged.connect(self._sync_to_state)
+        ga_params_lay.addWidget(self.f_max_edit, 2, 1)
+        self.sch_lbl = QLabel("Schroeder f: — Hz")
+        self.sch_lbl.setStyleSheet("color: #888888; font-size: 9pt;")
+        ga_params_lay.addWidget(self.sch_lbl, 2, 2)
+
+        ga_params_lay.addWidget(QLabel("Min mic dist [m]:"), 3, 0)
         self.min_mic_distance_edit = QLineEdit("0.5")
         self.min_mic_distance_edit.setValidator(QDoubleValidator(0.01, 60.0, 3, self))
-        mmd_lay.addWidget(self.min_mic_distance_edit)
-        lay.addWidget(mmd_box)
+        self.min_mic_distance_edit.textChanged.connect(self._sync_to_state)
+        ga_params_lay.addWidget(self.min_mic_distance_edit, 3, 1)
+
+        ga_params_lay.addWidget(QLabel("N° mics:"), 4, 0)
+        self.n_mics_edit = QLineEdit("4")
+        self.n_mics_edit.setValidator(QIntValidator(1, 100, self))
+        self.n_mics_edit.textChanged.connect(self._sync_to_state)
+        ga_params_lay.addWidget(self.n_mics_edit, 4, 1)
+
+        lay.addWidget(ga_params_box)
 
         # Vertices table
         vbox = QGroupBox(" Vertices")
         vlay = QVBoxLayout(vbox)
         self.vtable = _make_table(["✓", "Param", "X min", "X max", "Y min", "Y max"])
+        self.vtable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("vertex", row))
         vlay.addWidget(self.vtable)
         lay.addWidget(vbox)
 
@@ -482,6 +504,8 @@ class GAConfigScreen(QWidget):
         wbox = QGroupBox(" Wall Tilt")
         wlay = QVBoxLayout(wbox)
         self.wtable = _make_table(["✓", "Param", "Tilt min", "Tilt max", "", ""])
+        self.wtable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("wall", row))
         wlay.addWidget(self.wtable)
         lay.addWidget(wbox)
 
@@ -489,6 +513,9 @@ class GAConfigScreen(QWidget):
         hbox = QGroupBox(" Height")
         hlay = QVBoxLayout(hbox)
         self.htable = _make_table(["✓", "Param", "Min", "Max", "", ""])
+        self.htable.setMaximumHeight(70)
+        self.htable.cellDoubleClicked.connect(
+            lambda row, col: self._on_table_row_double_clicked("height", row))
         hlay.addWidget(self.htable)
         lay.addWidget(hbox)
 
@@ -500,8 +527,7 @@ class GAConfigScreen(QWidget):
         grid.setSpacing(6)
         grid.setContentsMargins(0, 6, 0, 6)
         for text, role, cb, r, c, cs in [
-            ("Load from Design", "secondary", self._load_from_design, 0, 0, 1),
-            ("Load Room File",   "secondary", self._load_room_file,   0, 1, 1),
+            ("Load Room File",   "secondary", self._load_room_file,   0, 0, 2),
             ("Clear Ranges",     "danger",    self._clear_ranges,     1, 0, 1),
             ("Optimize",         "success",   self._run_ga,           1, 1, 1),
         ]:
@@ -514,6 +540,24 @@ class GAConfigScreen(QWidget):
         grid.setColumnStretch(1, 1)
         lay.addWidget(btn_frame)
         return panel
+
+    # ── Schroeder frequency ──────────────────────────────────────────────────
+    def _update_schroeder_label(self):
+        """Recalcula y muestra la frecuencia de Schroeder del recinto base
+        (geometría actualmente cargada en self.state.room_geometry), usando
+        dumF.get_sch(room_params). Se le pasa la data completa extraída del
+        JSON (self.state.room_geometry, con su clave "data"), no solo el
+        contenido interno de geometría."""
+        room_data = self.state.room_geometry
+        geom = room_data.get("data", {}) if room_data else {}
+        if not geom:
+            self.sch_lbl.setText("Schroeder f: — Hz")
+            return
+        try:
+            sch = dumF.get_sch(room_data)
+            self.sch_lbl.setText(f"Schroeder f: {sch:.1f} Hz")
+        except Exception:
+            self.sch_lbl.setText("Schroeder f: — Hz")
 
     # ── Overlay ───────────────────────────────────────────────────────────────
     def resizeEvent(self, event):
@@ -563,16 +607,23 @@ class GAConfigScreen(QWidget):
         cfg["height_ranges"] = hr
         cfg["output_dir"]    = self.output_dir
         cfg["min_mic_distance"] = float(self.min_mic_distance_edit.text() or 0.5)
+        cfg["n_mics"]        = int(self.n_mics_edit.text() or 4)
         cfg["run_name"]      = self.run_name_edit.text()
         cfg["n_generations"] = int(self.n_generations_edit.text() or 100)
         cfg["sol_per_pops"]  = int(self.sol_per_pops_edit.text() or 20)
+        cfg["f_max"]         = float(self.f_max_edit.text() or 200.0)
 
     def _sync_from_state(self):
         """Lee state.ga_config y reconstruye las tablas si hay geometría disponible."""
         cfg  = self.state.ga_config
-        geom = self.state.room_geometry.get("data", {})
+        room = self.state.room_geometry
+        geom = room.get("data", {})
         if not geom.get("vertices"):
             return
+
+        # Sync symmetry flag from JSON in case it wasn't set yet (e.g. on startup)
+        if "is_symmetric" in room:
+            self.state.is_symmetric = room["is_symmetric"]
 
         verts  = [(v[0], v[1]) for v in geom["vertices"].values()]
         walls  = [{"id": f"W{i+1}", "tilt_deg": geom.get("walls", {}).get(f"W{i+1}", 0.0)}
@@ -585,7 +636,7 @@ class GAConfigScreen(QWidget):
         saved_wr = cfg.get("wall_ranges",   [])
         saved_hr = cfg.get("height_ranges", {})
 
-        sym = self.state.symmetric
+        sym = self.state.is_symmetric
 
         # Usar rangos guardados si coincide la cantidad de vértices/paredes;
         # si no, inicializar en cero.
@@ -622,9 +673,11 @@ class GAConfigScreen(QWidget):
             self.dir_lbl.setText(self.output_dir)
             self.dir_lbl.setStyleSheet("color: #aaaaaa; font-size: 8pt;")
         self.min_mic_distance_edit.setText(str(cfg.get("min_mic_distance", 0.5)))
+        self.n_mics_edit.setText(str(cfg.get("n_mics", 4)))
         self.run_name_edit.setText(cfg.get("run_name", ""))
         self.n_generations_edit.setText(str(cfg.get("n_generations", 100)))
         self.sol_per_pops_edit.setText(str(cfg.get("sol_per_pops", 20)))
+        self.f_max_edit.setText(str(cfg.get("f_max", 200)))
 
         self.canvas.load(verts, walls, sym, locked_set,
                           audience_verts, audience_locked_set, source_positions)
@@ -640,6 +693,8 @@ class GAConfigScreen(QWidget):
         if self.height_cb:
             self.height_cb.setChecked(self.height_ranges.get("enabled", True))
 
+        self._update_schroeder_label()
+
     # ── Data loading ──────────────────────────────────────────────────────────
     def _load_room_file(self):
         path, _ = QFileDialog.getOpenFileName(self, "Load Room", "", "JSON Files (*.json)")
@@ -649,6 +704,8 @@ class GAConfigScreen(QWidget):
             with open(path) as f:
                 raw = json.load(f)
             self.state.room_geometry = raw if "data" in raw else {"data": raw}
+            # Sync symmetry flag from the loaded JSON before building tables/canvas
+            self.state.is_symmetric = self.state.room_geometry.get("is_symmetric", False)
             self._load_from_design()
         except Exception as e:
             _show_error(self, f"Could not load file:\n{e}")
@@ -663,7 +720,7 @@ class GAConfigScreen(QWidget):
                   for i in range(len(verts))]
         height = geom.get("Z", 3.0)
         audience_verts, source_positions = _extract_audience_and_source(geom)
-        sym = self.state.symmetric
+        sym = self.state.is_symmetric
 
         locked_set = {i for i, v in enumerate(verts) if sym and v[0] < 0}
         self.vertex_ranges = [{"vertex": f"V{i+1}", "xmin": 0., "xmax": 0., "ymin": 0., "ymax": 0.,
@@ -681,23 +738,32 @@ class GAConfigScreen(QWidget):
                           audience_verts, audience_locked_set, source_positions)
         self._rebuild_tables(verts, walls, height)
         self._sync_to_state()
+        self._update_schroeder_label()
 
     def _rebuild_tables(self, verts, walls, height):
-        self.vtable.setRowCount(0)
-        self.wtable.setRowCount(0)
-        self.htable.setRowCount(0)
-        self.vertex_cbs.clear()
-        self.wall_cbs.clear()
-        for i, r in enumerate(self.vertex_ranges):
-            locked = r.get("locked", False)
-            self.vertex_cbs.append(
-                _add_row(self.vtable, r["vertex"], r["xmin"], r["xmax"], r["ymin"], r["ymax"],
-                         enabled=r.get("enabled", True), locked=locked))
-        for i, r in enumerate(self.wall_ranges):
-            self.wall_cbs.append(
-                _add_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"]))
-        hr = self.height_ranges
-        self.height_cb = _add_row(self.htable, "Height", hr["zmin"], hr["zmax"])
+        self.vtable.blockSignals(True)
+        self.wtable.blockSignals(True)
+        self.htable.blockSignals(True)
+        try:
+            self.vtable.setRowCount(0)
+            self.wtable.setRowCount(0)
+            self.htable.setRowCount(0)
+            self.vertex_cbs.clear()
+            self.wall_cbs.clear()
+            for i, r in enumerate(self.vertex_ranges):
+                locked = r.get("locked", False)
+                self.vertex_cbs.append(
+                    _add_row(self.vtable, r["vertex"], r["xmin"], r["xmax"], r["ymin"], r["ymax"],
+                             enabled=r.get("enabled", True), locked=locked))
+            for i, r in enumerate(self.wall_ranges):
+                self.wall_cbs.append(
+                    _add_row(self.wtable, f"W{i+1}", r["tmin"], r["tmax"]))
+            hr = self.height_ranges
+            self.height_cb = _add_row(self.htable, "Height", hr["zmin"], hr["zmax"])
+        finally:
+            self.vtable.blockSignals(False)
+            self.wtable.blockSignals(False)
+            self.htable.blockSignals(False)
 
     def _clear_ranges(self):
         n_v = len(self.vertex_ranges)
@@ -744,3 +810,19 @@ class GAConfigScreen(QWidget):
 
     def _run_ga(self):
         self.runRequested.emit()
+
+    # ── Table double-click → range dialog ────────────────────────────────────
+    def _on_table_row_double_clicked(self, kind, row):
+        """Doble click en una fila de vtable/wtable/htable: abre el mismo
+        diálogo de rango que se usa al hacer click sobre el canvas. Reutiliza
+        _on_item_selected para height usamos su propio diálogo simple."""
+        if kind in ("vertex", "wall"):
+            self._on_item_selected(kind, row)
+        elif kind == "height":
+            self.info_lbl.setText("Height selected")
+            dlg = HeightRangeDialog(self.height_ranges, self)
+            if dlg.exec() == QDialog.Accepted:
+                self.height_ranges.update(dlg.get_ranges())
+                hr = self.height_ranges
+                _update_row(self.htable, 0, hr["zmin"], hr["zmax"])
+                self._sync_to_state()

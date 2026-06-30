@@ -6,7 +6,18 @@ from room_modal_optimizer.optimization.optimizer import Optimizer
 import numpy as np
 
 
-def base_room_pipeline(room_params, room_name, min_mic_distance):
+def get_sch(room_params, TR=0.5):
+    """
+    Returns schroeder frequency for a room using TR = 0.5s
+    """
+
+    v = room_params["volume"]
+    print(f"Volume: {v}")
+    f_sch = 2000*np.sqrt(TR/v)
+
+    return f_sch
+
+def base_room_pipeline(room_params, room_name, min_mic_distance, n_mics):
     mesher = Mesher()
     directSimulator = DirectSimulator()
     evaluator = Evaluator()
@@ -17,19 +28,25 @@ def base_room_pipeline(room_params, room_name, min_mic_distance):
         evaluator=evaluator,
     )
 
-    minMicDistance = 0.25
-
     bestMsfd, bestMicPositions = pipeline.run(
         params=room_params,
         room_name=room_name,
-        minMicDistance = minMicDistance
+        minMicDistance = min_mic_distance,
+        nMics=n_mics
     )
 
     print("Best MSFD:", bestMsfd)
     print("Best mic positions:")
     print(bestMicPositions)
 
-    return bestMsfd, bestMicPositions
+    bestMsfd= sim_order_2(room_params, bestMicPositions, "Base Room")
+    
+    mics_pos = []
+
+    for i in bestMicPositions:
+        mics_pos.append(list(i))
+
+    return bestMsfd, mics_pos
 
 def sim_order_2(room_params, micPositions, room_name):
     
@@ -45,7 +62,7 @@ def sim_order_2(room_params, micPositions, room_name):
         mesh_path=meshPathFinal,
         mic_positions=micPositions,
         order=1,
-        room_name="final_ga",
+        room_name=room_name,
         freqs=np.arange(20.0, 201.0, 2.0),
         use_impedance=True,
         wall_z=25.0 + 0j,
@@ -135,14 +152,21 @@ def optimize(room_params, ga_config, minMicDistance):
 
     gene_space_config = get_gene_space(ga_config, vertex_to_change=verts_to_change, walls_to_change=walls_to_change)
 
-    print(gene_space_config)
 
     # Run GA to find optimized room
-    optimizer = Optimizer(base_params=room_params, gene_space_config=gene_space_config, minMicDistance=minMicDistance, n_generations=ga_config["n_generations"], sol_per_pop=ga_config["n_generations"], keepSymmetry=room_params["is_symmetric"], savePlots=False )
+    optimizer = Optimizer(
+        base_params=room_params, 
+        gene_space_config=gene_space_config, 
+        minMicDistance=minMicDistance, 
+        n_generations=ga_config["n_generations"], 
+        sol_per_pop=ga_config["n_generations"], 
+        keepSymmetry=room_params["is_symmetric"], 
+        nMics=ga_config["n_mics"],
+        fmax=ga_config["f_max"],
+        runName=ga_config["run_name"], 
+        savePlots=False )
     optim_out = optimizer.run()
     return optim_out
-
-
 
 def run_ga_optimization(room_params, ga_config, minMicDistance):
 
@@ -152,24 +176,24 @@ def run_ga_optimization(room_params, ga_config, minMicDistance):
 
     # primero ejecuto pipeline de recinto base
 
-    bestMsfd, bestMicPositions = base_room_pipeline(room_params, "Base Room", minMicDistance)
+    base_bestMsfd, bestMicPositions = base_room_pipeline(room_params, "Base Room", minMicDistance, n_mics=ga_config["n_mics"])
 
-    base_room_dict = {"room_name": "Base Room", "best_mic_positions":bestMicPositions, "params":room_params}
+    base_room_dict = {"room_name": "Base Room", "best_mic_positions":bestMicPositions, "params":room_params, "best_msfd":base_bestMsfd}
 
     cleaned_output.append(base_room_dict)
 
     optim_out= optimize(room_params, ga_config, minMicDistance)
 
-
     for r in optim_out:
         room_out = {k: r[k] for k in keys_to_extract if k in r}
-        best_msdf = sim_order_2(room_out["params"], room_out["best_mic_positions"], room_out["room_name"])
+        best_msdf = 1/r["fitness"] - 1
         room_out["best_msfd"] = best_msdf
         cleaned_output.append(room_out)
 
-    #cleaned_output structure: List of best rooms. Each room is a dict.
-    # keys: "room_name", "best_mic_positions", "params", "best_msfd"
+    ##cleaned_output structure: List of best rooms. Each room is a dict.
+    ## keys: "room_name", "best_mic_positions", "params", "best_msfd"
 
+    print(cleaned_output)
     return cleaned_output
 
 def sim_response(params, room_name, micPositions):

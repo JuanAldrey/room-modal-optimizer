@@ -627,6 +627,14 @@ class InfoPanel(QWidget):
         ml.addWidget(self.msfd_lbl)
         lay.addWidget(msfd_box)
 
+        sch_box = QGroupBox("Schroeder frequency")
+        sl = QVBoxLayout(sch_box)
+        self.sch_lbl = QLabel("—")
+        self.sch_lbl.setStyleSheet("color: #4dabf7; font-size: 13pt; font-weight: bold;")
+        self.sch_lbl.setAlignment(Qt.AlignCenter)
+        sl.addWidget(self.sch_lbl)
+        lay.addWidget(sch_box)
+
         mics_box = QGroupBox("Best mics positions")
         mil = QVBoxLayout(mics_box)
         self.mics_table = QTableWidget(0, 4)
@@ -666,6 +674,12 @@ class InfoPanel(QWidget):
         self.params_lbl.setText("\n".join(lines))
 
         self.msfd_lbl.setText(f"{bestMsfd:.4f}" if isinstance(bestMsfd, (int, float)) else "—")
+
+        try:
+            sch = dumF.get_sch(params) if geom else None
+        except Exception:
+            sch = None
+        self.sch_lbl.setText(f"{sch:.1f} Hz" if isinstance(sch, (int, float)) else "—")
 
         self.mics_table.setRowCount(0)
         for m in mics:
