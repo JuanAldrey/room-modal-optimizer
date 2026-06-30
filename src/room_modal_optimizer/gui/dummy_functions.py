@@ -159,7 +159,7 @@ def optimize(room_params, ga_config, minMicDistance):
         gene_space_config=gene_space_config, 
         minMicDistance=minMicDistance, 
         n_generations=ga_config["n_generations"], 
-        sol_per_pop=ga_config["n_generations"], 
+        sol_per_pop=ga_config["sol_per_pops"], 
         keepSymmetry=room_params["is_symmetric"], 
         nMics=ga_config["n_mics"],
         fmax=ga_config["f_max"],
