@@ -67,7 +67,7 @@ class Pipeline:
             micHeight=1.2,
             margin=0.0,
         )
-        print("Amount of possible microphone positions:", possibleMicPositions.shape)
+        print("Amount of possible microphone positions:", possibleMicPositions.shape[0])
 
         if self.savePlantPlot:
             plotsDir = Path("data") / room_name / "plots/plants"
@@ -96,10 +96,17 @@ class Pipeline:
         )
 
         # Extract possible microphone combos and calculate best MSFD
+        nCombos = int(
+            (56 / 45) * possibleMicPositions.shape[0]**2
+            - (80 / 3) * possibleMicPositions.shape[0]
+            - 4000
+        )
+        nCombos = max(nCombos, 1000)
+        nCombos = min(nCombos, 300000)
         combos = self.generateRandomCombos(
             possibleMicPositions=possibleMicPositions,
             nMicsPerCombo=nMics,
-            nCombos=100000,
+            nCombos=nCombos,
             minMicDistance=minMicDistance,
         )
 
