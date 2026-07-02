@@ -460,7 +460,7 @@ class Optimizer:
 
         pipeline = self.build_pipeline()
 
-        idx, bestMicPositions = pipeline.run(
+        result = pipeline.run(
             params,
             room_name=room_name,
             minMicDistance=self.minMicDistance,
@@ -468,10 +468,12 @@ class Optimizer:
             fmax=200
         )
         
-        if idx is None:
+        if result is None:
             fitness = 1e-9
             print(f"{room_name} | idx=None | fitness={fitness:.6f}")
+            return fitness
         else:
+            idx, bestMicPositions = result
             fitness = 1.0 / (1.0 + abs(idx))
             print(f"{room_name} | idx={idx:.6f} | fitness={fitness:.6f}")
 
