@@ -1,6 +1,6 @@
-# Room Modal Optimizer
+# Room Modes Optimizer
 
-Room Modal Optimizer is a Python package for acoustic room analysis and optimization.
+Room Modes Optimizer is a Python package for acoustic room analysis and optimization.
 It combines geometry generation, finite element simulations and genetic algorithms to evaluate and improve low-frequency room behavior.
 
 The project focuses on two main optimization problems:
